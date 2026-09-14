@@ -138,6 +138,18 @@ def _card(store: Store, sink, a) -> dict:
     elif status != "UNMANAGED":
         stale = True
 
+    # The "Always playing: <title>" status line (tonie_card.html) needs the
+    # pinned item's own title, looked up directly from `a.pinned_item_id`
+    # -- *not* `up_next`. `up_next` is `plan.item_ids[0]`, and for ALBUM
+    # mode `choose_next` deliberately returns the whole library in its
+    # normal (unrotated) position order, "content-neutral to a pin"
+    # (domain/rotation.py) since an album already loads everything -- so
+    # for an ALBUM-mode assignment `up_next` is whatever sits at position
+    # 0, not necessarily the pinned item. Reusing it here would have shown
+    # the wrong title on ALBUM-mode pinned tonies (caught rendering this
+    # against a real ALBUM fixture).
+    pinned_item = store.items.get(a.pinned_item_id) if status == "PINNED" else None
+
     return {
         "assignment": a,
         "library": library,
@@ -148,6 +160,7 @@ def _card(store: Store, sink, a) -> dict:
         "total_minutes": _minutes(total_seconds) if chapters else None,
         "up_next": up_next,
         "plan_reason": plan_reason,
+        "pinned_item": pinned_item,
         "stale": stale,
         # Below PIN_SEARCH_THRESHOLD (== library.py's PAGE_SIZE, imported
         # rather than duplicated), today's plain <select> still gets every
@@ -219,12 +232,35 @@ def pin_assignment(
     request: Request,
     assignment_id: str,
     item_id: str = Form(""),
+    play_mode: str = Form("always"),
     user: str = Depends(require_login),
 ):
+    """Sets or clears `assignment.pinned_item_id` -- still called "pin"
+    internally (spec decision: renaming would mean a migration and a
+    route change for no user-visible benefit), even though the screen no
+    longer uses that word.
+
+    `play_mode` is the new "What this tonie plays" radio group
+    (tonie_card.html): "rotate" always clears the pin regardless of
+    whatever item a leftover picker selection names -- selecting "Rotate
+    through the library" and saving must never leave an old selection in
+    effect. The one-click search results in pin_search.html/
+    pin_options_results.html don't carry a `play_mode` field at all
+    (clicking a specific item *is* "always play this one"), so the
+    default is "always" -- that keeps them, and the small-library
+    <select>'s existing round trip, working exactly as before.
+    """
     store: Store = request.app.state.store
-    store.assignments.set_pin(assignment_id, item_id or None)
+    is_rotate = play_mode == "rotate"
+    new_item_id = None if is_rotate else (item_id or None)
+    store.assignments.set_pin(assignment_id, new_item_id)
     a = store.assignments.get(assignment_id)
-    phrase = f"{a.target_name}: pin cleared" if not item_id else f"{a.target_name}: pinned"
+    if new_item_id:
+        item = store.items.get(new_item_id)
+        title = item.title if item else ""
+        phrase = f"{a.target_name}: now always playing {title}".rstrip()
+    else:
+        phrase = f"{a.target_name}: now rotating through the library"
     return _redirect_to_dashboard(phrase)
 
 
@@ -313,12 +349,22 @@ def set_mode(
 def set_enabled(
     request: Request,
     assignment_id: str,
-    enabled: str = Form(""),
+    paused: str = Form(""),
     user: str = Depends(require_login),
 ):
+    """The dashboard's "Paused" switch (tonie_card.html) -- a different
+    question from "what does this tonie play" (the pin/play_mode radios
+    above): whether Box Butler touches this tonie at all. The switch is
+    checked (`paused` submits) when the operator wants Box Butler to
+    leave it alone, which is `assignment.enabled = False` underneath --
+    inverted from the field's own name because that's what a checked
+    "Paused" switch means. Route path and `store.assignments.set_enabled`
+    keep their existing names; only the wire field the browser posts
+    changed, to match the on-screen control it now belongs to.
+    """
     store: Store = request.app.state.store
-    is_enabled = enabled in ("1", "true", "on")
+    is_enabled = paused not in ("1", "true", "on")
     store.assignments.set_enabled(assignment_id, is_enabled)
     a = store.assignments.get(assignment_id)
-    phrase = f"{a.target_name}: enabled" if is_enabled else f"{a.target_name}: disabled"
+    phrase = f"{a.target_name}: paused" if not is_enabled else f"{a.target_name}: resumed"
     return _redirect_to_dashboard(phrase)

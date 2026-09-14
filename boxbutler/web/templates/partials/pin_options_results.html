@@ -21,7 +21,7 @@
     <form method="post" action="/assignments/{{ assignment.id }}/pin" class="pin-search-result-form">
       <input type="hidden" name="item_id" value="{{ item.id }}">
       <button type="submit" class="btn btn-secondary pin-search-result-btn">
-        {{ item.title }}{% if assignment.pinned_item_id == item.id %} <span class="pill pill-ok">pinned</span>{% endif %}
+        {{ item.title }}{% if assignment.pinned_item_id == item.id %} <span class="pill pill-ok">always playing</span>{% endif %}
       </button>
     </form>
   </li>

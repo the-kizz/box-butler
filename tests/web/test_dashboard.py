@@ -5,6 +5,7 @@ never the network, never a real tonie. See the `seeded` fixture in
 conftest.py (boxbutler.web.fake_data.seed_fake against the real FakeSink).
 """
 import re
+from pathlib import Path
 
 from boxbutler.domain.models import ItemKind
 from boxbutler.web.routes.library import PAGE_SIZE
@@ -12,6 +13,15 @@ from boxbutler.web.routes.library import PAGE_SIZE
 
 def _first_managed(store):
     return next(a for a in store.assignments.list() if a.library_id and a.state == "OK").id
+
+
+def _card_html(html, target_name):
+    """The HTML of a single card, located by its title -- robust to
+    where the card falls on the page (unlike a fixed offset from some
+    other landmark, which can land short or land on the wrong card)."""
+    start = html.rindex("<article", 0, html.index(f">{target_name}<"))
+    end = html.index("</article>", start) + len("</article>")
+    return html[start:end]
 
 
 def _bulk_up_library(store, library_id, n):
@@ -35,27 +45,129 @@ def test_dashboard_shows_one_card_per_target_including_unmanaged(seeded):
     assert "Unmanaged" in html and "no library assigned" in html
 
 
-def test_pinned_assignment_shows_pinned_not_just_rotating_checked(seeded, store):
+def test_pinned_assignment_shows_always_playing_not_just_rotating_checked(seeded, store):
     """Verified in a browser: pin an item, click Set pin, and the card still
-    shows "Rotating" checked -- pinning freezes the cursor
+    showed "Rotating" checked -- pinning freezes the cursor
     (`choose_next`/`rotation.py` sets `rotates=False`) but the only signal
     on the card was the Rotating toggle, which stayed checked because
-    pinning never touches `assignment.enabled`. Someone pins a story, sees
-    Rotating still ticked, and reasonably concludes the pin didn't take.
-    PINNED must appear as its own visible state (not just leave "Rotating"
-    to imply the opposite of what actually happened), and it must not be
-    reported as plain "OK" -- a pin is deliberate, not unhealthy, but it is
-    still a real, distinct fact about the tonie.
+    pinning never touched `assignment.enabled`. Someone pinned a story, saw
+    Rotating still ticked, and reasonably concluded the pin didn't take.
+
+    Wording round: "Pin" itself reads as a passcode to an operator of a
+    children's product, and "Rotating" (a checkbox) sitting next to a pin
+    control was the very shape of the contradiction. Both problems are
+    dissolved the same way: "what this tonie plays" is now a single
+    either/or (radio buttons), so there is no second control left that
+    can disagree. The status line reads "Always playing: <title>", never
+    the word "Pinned"; the "Rotating" checkbox is gone entirely, replaced
+    by a separate "Paused" switch that answers a different question.
     """
     a = next(a for a in store.assignments.list() if a.target_name == "Green Tonie")
     item = store.items.list(a.library_id)[0]
     store.assignments.set_pin(a.id, item.id)
 
     html = seeded.get("/").text
-    card_html = html[html.index("Green Tonie"):]
-    card_html = card_html[: card_html.index("</article>")] if "</article>" in card_html else card_html
-    assert "PINNED" in card_html.upper()
-    assert "Rotating" in card_html  # still its own, separate control
+    card_html = _card_html(html, "Green Tonie")
+    assert "Always playing" in card_html
+    assert item.title in card_html
+    assert ">Pinned<" not in card_html  # the old status word is gone
+    assert "Rotating" not in card_html
+    # The "Paused" switch is still its own, separate control -- unchecked,
+    # since this assignment is enabled.
+    assert 'name="paused"' in card_html
+    assert re.search(r'name="paused"[^>]*checked', card_html) is None
+
+
+def test_choosing_always_play_leaves_no_control_claiming_the_tonie_still_rotates(seeded, store):
+    """Pins the exact bug that started this whole thread: selecting "Always
+    play this one" and choosing an item must not leave any control on the
+    card claiming the tonie still rotates. Asserts on the rendered card,
+    not on internal state -- the original bug was that the screen
+    contradicted itself even though `pinned_item_id` was set correctly.
+    """
+    aid = _first_managed(store)
+    a = store.assignments.get(aid)
+    item = store.items.list(a.library_id)[0]
+
+    r = seeded.post(f"/assignments/{aid}/pin", data={"play_mode": "always", "item_id": item.id})
+    assert r.status_code in (200, 303)
+    assert store.assignments.get(aid).pinned_item_id == item.id
+
+    html = seeded.get("/").text
+    card_html = _card_html(html, a.target_name)
+
+    assert "Always playing" in card_html
+    # The "Rotate through the library" radio must not be the checked one.
+    assert re.search(
+        r'value="rotate"[^>]*class="play-mode-radio play-mode-rotate"[^>]*checked', card_html
+    ) is None
+    assert re.search(
+        r'value="always"[^>]*class="play-mode-radio play-mode-always"[^>]*checked', card_html
+    )
+    # Nothing on the card may say "Rotating" any more (the old contradiction).
+    assert "Rotating" not in card_html
+
+
+def test_choosing_rotate_clears_the_pin_even_if_the_picker_still_shows_an_item(seeded, store):
+    """Selecting "Rotate through the library" and saving must clear the pin
+    regardless of whatever item a leftover picker selection names -- the
+    radio choice, not the picker value, decides."""
+    aid = _first_managed(store)
+    a = store.assignments.get(aid)
+    item = store.items.list(a.library_id)[0]
+    store.assignments.set_pin(aid, item.id)
+
+    r = seeded.post(f"/assignments/{aid}/pin", data={"play_mode": "rotate", "item_id": item.id})
+    assert r.status_code in (200, 303)
+    assert store.assignments.get(aid).pinned_item_id is None
+
+    html = seeded.get("/").text
+    card_html = _card_html(html, a.target_name)
+    assert "Always playing" not in card_html
+    assert re.search(
+        r'value="rotate"[^>]*class="play-mode-radio play-mode-rotate"[^>]*checked', card_html
+    )
+
+
+def test_item_picker_is_css_revealed_only_when_always_play_this_one_is_checked():
+    """The item picker (select or search) is only meaningful once "Always
+    play this one" is chosen. It must work with no JavaScript at all, so
+    the reveal is pure CSS (`.play-mode-always:checked` driving
+    `.play-mode-picker`'s `display`) rather than anything server-rendered
+    conditionally or toggled by a script. Checked against the source
+    stylesheet (`static/app.css` is a gitignored build artefact -- see
+    `test_setup.py::test_setup_and_static_are_not_redirected` -- so a test
+    that requires it to exist would fail on a fresh clone before `make
+    css` runs)."""
+    repo_root = Path(__file__).resolve().parents[2]
+    css = (repo_root / "boxbutler/web/static/src/input.css").read_text()
+    assert ".play-mode-picker" in css and "display: none" in css.split(".play-mode-picker")[1][:60]
+    assert re.search(
+        r"\.play-mode-always:checked\)?\s*[,~ ]*\.play-mode-picker\s*\{[^}]*display:\s*block", css
+    ) or re.search(r":has\(\.play-mode-always:checked\)[^{]*\.play-mode-picker\s*\{[^}]*display:\s*block", css)
+
+
+def test_always_playing_names_the_pinned_item_even_in_album_mode(seeded, store):
+    """"Always playing: <title>" must name the actual pinned item -- caught
+    live while building this: `_card()` used to take the title from
+    `up_next` (`plan.item_ids[0]`), but `choose_next` returns ALBUM-mode
+    items in plain library-position order regardless of the pin
+    ("content-neutral to a pin" -- domain/rotation.py, it already loads
+    the whole library) -- so on an ALBUM-mode tonie, `up_next` names
+    whatever sits at position 0, not the pinned item. "Blue Tonie" is
+    ALBUM-mode (fake_data.py); pin something other than its first item and
+    the header must still say that item's name, not the first one.
+    """
+    a = next(a for a in store.assignments.list() if a.target_name == "Blue Tonie")
+    items = store.items.list(a.library_id)
+    first_item, other_item = items[0], items[-1]
+    assert first_item.id != other_item.id
+    store.assignments.set_pin(a.id, other_item.id)
+
+    html = seeded.get("/").text
+    card_html = _card_html(html, "Blue Tonie")
+    assert f"Always playing: {other_item.title}" in card_html
+    assert first_item.title not in card_html.split("Always playing")[1][:200]
 
 
 def test_degraded_is_unmissable_with_repair_action(seeded):
@@ -311,17 +423,26 @@ def test_pause_resume_control_is_reachable_and_round_trips(seeded, store):
     was fully wired and orchestrator-effective but had no UI control
     pointing at it -- only tests exercised it. The dashboard card must
     offer an operator-facing pause/resume control.
+
+    Wording round: the control is now a switch labelled "Paused" (checked
+    means "Box Butler will leave this tonie alone"), the inverse sense of
+    the old "Rotating"/enabled checkbox -- posting the field checked
+    (`paused=1`) must disable the assignment, and posting it unchecked
+    (the field absent, same as any real unchecked checkbox) must enable
+    it. The route path and `store.assignments.set_enabled` keep their
+    names; only the wire field the browser posts changed.
     """
     aid = _first_managed(store)
     html = seeded.get("/").text
     assert f'action="/assignments/{aid}/enabled"' in html
+    assert "Box Butler will leave this tonie alone until you switch this off." in html
 
-    r = seeded.post(f"/assignments/{aid}/enabled", data={})  # unchecked checkbox sends nothing
+    r = seeded.post(f"/assignments/{aid}/enabled", data={})  # unchecked switch sends nothing
+    assert r.status_code in (200, 303)
+    assert store.assignments.get(aid).enabled is True
+
+    r = seeded.post(f"/assignments/{aid}/enabled", data={"paused": "1"})
     assert r.status_code in (200, 303)
     assert store.assignments.get(aid).enabled is False
     assert "Paused" in seeded.get("/").text
-
-    r = seeded.post(f"/assignments/{aid}/enabled", data={"enabled": "1"})
-    assert r.status_code in (200, 303)
-    assert store.assignments.get(aid).enabled is True
     assert store.assignments.get(aid).state != "DEGRADED"  # sanity: still the OK fixture

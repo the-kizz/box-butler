@@ -100,7 +100,7 @@ def test_status_shows_an_assignment_with_no_library_as_unmanaged_not_ok(factory,
     assert "OK" not in row
 
 
-def test_status_shows_a_pinned_assignment_as_pinned_not_ok(factory, world, capsys):
+def test_status_shows_a_pinned_assignment_as_fixed_not_ok(factory, world, capsys):
     """A pin freezes rotation (`choose_next` sets `rotates=False`) but is a
     deliberate operator choice, not a health problem -- it must not be
     reported as the raw "OK" state, the same "raw state lies" bug already
@@ -108,6 +108,12 @@ def test_status_shows_a_pinned_assignment_as_pinned_not_ok(factory, world, capsy
     The dashboard card and this command must agree with each other, per
     `boxbutler/domain/rotation.py::pin_active`, the single function both
     now share.
+
+    Wording round: STATE is a fixed-width column, so it needs a short
+    token, not the dashboard's "Always playing" sentence -- "FIXED", never
+    "PINNED" (which reads as a passcode). `pinned_item_id` and
+    `pin_active()` are unchanged internal names; only this printed token
+    changed.
     """
     store = world["store"]
     a = store.assignments.list()[0]
@@ -116,7 +122,8 @@ def test_status_shows_a_pinned_assignment_as_pinned_not_ok(factory, world, capsy
     assert main(["status"], deps_factory=factory) == 0
     out = capsys.readouterr().out
     row = next(line for line in out.splitlines() if line.startswith(a.target_name))
-    assert "PINNED" in row
+    assert "FIXED" in row
+    assert "PINNED" not in row
     assert "OK" not in row
 
 

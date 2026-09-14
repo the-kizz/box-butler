@@ -8,7 +8,7 @@
    pin here posts to the existing /assignments/{id}/pin route, which
    redirects back to the dashboard. #}
 {% block content %}
-<h1 class="page-title">Pin an item — {{ assignment.target_name }}</h1>
+<h1 class="page-title">Choose what {{ assignment.target_name }} always plays</h1>
 <p><a href="/">&larr; Back to dashboard</a></p>
 
 <form method="get" action="/assignments/{{ assignment.id }}/pin-options" class="pin-search-form">
@@ -20,7 +20,7 @@
 
 {% if assignment.pinned_item_id %}
 <form method="post" action="/assignments/{{ assignment.id }}/pin" class="pin-clear-form">
-  <button type="submit" class="btn btn-secondary">Clear pin</button>
+  <button type="submit" class="btn btn-secondary">Switch to rotating</button>
 </form>
 {% endif %}
 

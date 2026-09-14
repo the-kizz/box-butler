@@ -10,7 +10,7 @@
     {% elif card.status == "PAUSED" %}
     <p class="status status-PAUSED">{{ icon("pause-circle") }} <span>Paused</span></p>
     {% elif card.status == "PINNED" %}
-    <p class="status status-PINNED">{{ icon("push-pin") }} <span>Pinned</span></p>
+    <p class="status status-PINNED">{{ icon("push-pin") }} <span>Always playing{% if card.pinned_item %}: {{ card.pinned_item.title }}{% endif %}</span></p>
     {% else %}
     <p class="status status-UNMANAGED">{{ icon("circle-dashed") }} <span>Unmanaged — no library assigned</span></p>
     {% endif %}
@@ -21,13 +21,14 @@
   {% elif card.status == "PAUSED" %}
   <p class="paused-explain">Rotation is paused — nothing will be loaded onto this tonie until you resume it.</p>
   {% elif card.status == "PINNED" %}
-  {# fix round: a pin freezes the cursor (rotation.py's choose_next sets
-     rotates=False) but the "Rotating" checkbox below stayed checked and
-     was the only signal on the card -- reasonably read as "the pin didn't
-     take". This line, plus the PINNED badge above, says what's actually
-     true; "Rotating" stays as its own control (the pause/resume toggle,
-     a genuinely different thing) rather than being repurposed. #}
-  <p class="pinned-explain">Rotation is frozen on this item until it is unpinned.</p>
+  {# Wording round: "Pin" reads as a passcode (phone-lock PIN, parental
+     control) to an operator of a children's product -- a very likely
+     misreading. "What this tonie plays" below is now a plain either/or
+     (radio buttons, not a checkbox next to an unrelated pause toggle),
+     so this line only needs to say what's true in the same plain terms;
+     it can't contradict the play-mode radios because they're the same
+     fact rendered twice, from the same `pin_active`-derived status. #}
+  <p class="pinned-explain">This tonie will keep playing this item until you choose "Rotate through the library" again.</p>
   {% endif %}
 
   {% if card.library %}
@@ -49,7 +50,7 @@
       {% if card.up_next %}
         {{ card.up_next.title }}
       {% elif card.plan_reason == "PINNED" %}
-        pinned item stays
+        always plays this item
       {% elif card.plan_reason == "EMPTY_LIBRARY" %}
         <span class="muted">library is empty</span>
       {% elif card.plan_reason == "NO_CANDIDATE" %}
@@ -68,41 +69,96 @@
       {% endif %}
     </p>
 
-    {% if card.pin_options is not none %}
-    {# Below PIN_SEARCH_THRESHOLD: today's plain <select>, unchanged. One
-       row: sr-only label keeps an accessible name without the global
-       block-level <label> forcing its own line (fix round 1, minor 5). #}
-    <form method="post" action="/assignments/{{ card.assignment.id }}/pin" class="pin-form">
-      <label class="sr-only" for="pin-{{ card.assignment.id }}">Pin an item on {{ card.assignment.target_name }}</label>
-      {{ icon("push-pin") }}
-      <select id="pin-{{ card.assignment.id }}" name="item_id">
-        <option value="">No pin</option>
-        {% for it in card.pin_options %}
-        <option value="{{ it.id }}" {% if card.assignment.pinned_item_id == it.id %}selected{% endif %}>{{ it.title }}</option>
-        {% endfor %}
-      </select>
-      <button type="submit" class="btn btn-secondary">Set pin</button>
+    {# Wording round: "Pin" read as a passcode to the operator (phone-lock
+       PIN, parental control) -- a very likely misreading in a children's
+       product -- and a checkbox-shaped "Rotating" toggle plus a pin
+       control could show a contradiction on screen (pin an item and the
+       card still said "Rotating" ticked). "What this tonie plays" turns
+       the two into one mutually-exclusive either/or instead of papering
+       over the contradiction: a real <fieldset>/<legend> radio group, so
+       the question is announced with its two options, not two separately-
+       labelled controls that can disagree. Radios rather than a select
+       dropdown for the mode itself because exactly one of two states is
+       true at a time -- a select implies more than two choices. One
+       <form>, one Save button: plain HTML, no JS required -- "Rotate
+       through the library" + Save clears the item regardless of what the
+       (still-rendered) item picker shows, and "Always play this one" +
+       an item + Save sets it. The item picker (select below
+       PIN_SEARCH_THRESHOLD, search at/above it) is visually revealed by
+       the "Always play this one" radio via CSS's `:has()`
+       (`.card-body:has(.play-mode-always:checked) .play-mode-picker`,
+       input.css) -- pure CSS, so it works identically with or without
+       JavaScript; without `:has()` support the picker is simply always
+       visible, not broken. #}
+    <form method="post" action="/assignments/{{ card.assignment.id }}/pin" class="play-mode-form">
+      <fieldset class="play-mode-fieldset">
+        <legend>What this tonie plays</legend>
+        <div class="radio-option">
+          <input type="radio" id="play-rotate-{{ card.assignment.id }}" name="play_mode" value="rotate"
+                 class="play-mode-radio play-mode-rotate"
+                 {% if not card.assignment.pinned_item_id %}checked{% endif %}>
+          <label class="radio-label" for="play-rotate-{{ card.assignment.id }}">Rotate through the library</label>
+        </div>
+        <div class="radio-option">
+          <input type="radio" id="play-always-{{ card.assignment.id }}" name="play_mode" value="always"
+                 class="play-mode-radio play-mode-always"
+                 {% if card.assignment.pinned_item_id %}checked{% endif %}>
+          <label class="radio-label" for="play-always-{{ card.assignment.id }}">Always play this one</label>
+        </div>
+
+        {% if card.pin_options is not none %}
+        {# Below PIN_SEARCH_THRESHOLD: plain <select>, unchanged since fix
+           round 1 -- small libraries are well served by it. Kept inside
+           this <form> (unlike the search picker below) so it submits
+           together with the radio choice on one Save. #}
+        <div class="play-mode-picker">
+          <label class="sr-only" for="pin-{{ card.assignment.id }}">Item to always play on {{ card.assignment.target_name }}</label>
+          {{ icon("push-pin") }}
+          <select id="pin-{{ card.assignment.id }}" name="item_id">
+            <option value="">Choose an item&hellip;</option>
+            {% for it in card.pin_options %}
+            <option value="{{ it.id }}" {% if card.assignment.pinned_item_id == it.id %}selected{% endif %}>{{ it.title }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% endif %}
+      </fieldset>
+      <button type="submit" class="btn btn-secondary">Save</button>
     </form>
-    {% else %}
+    {% if card.pin_options is none %}
     {# At/above PIN_SEARCH_THRESHOLD: htmx active search instead of
-       dumping the whole library into a <select> (see partials/pin_search.html). #}
-    {% include "partials/pin_search.html" %}
+       dumping the whole library into a <select> (see
+       partials/pin_search.html). Deliberately outside the <form> above:
+       its own search/clear controls are real forms in their own right
+       (each search result is a self-contained one-click submit -- see
+       pin_search.html), and HTML forms cannot nest. `.play-mode-picker`
+       is revealed the same way either way -- `:has()` on the whole
+       `.card-body` (input.css), not sibling position, so it doesn't
+       matter that this sits outside the radios' own <form>. #}
+    <div class="play-mode-picker">
+      {% include "partials/pin_search.html" %}
+    </div>
     {% endif %}
 
     {# Final coherence review, Major-3: `POST /assignments/{id}/enabled` was
        fully wired and orchestrator-effective (run.py:500 skips a disabled
        assignment) but had no UI control at all -- only tests exercised it.
-       Same checkbox-plus-immediate-submit pattern as the item-level
-       "Enabled" toggle in partials/item_row.html, so it needs no confirm
-       dialog: it is reversible in one click, not destructive, and matches
-       an idiom already established elsewhere in this UI rather than
-       inventing a new one. #}
-    <form method="post" action="/assignments/{{ card.assignment.id }}/enabled" class="enabled-form">
+       Wording round: this answers a different question from "what this
+       tonie plays" above -- not *what* plays, but whether Box Butler
+       touches this tonie at all -- so it is no longer the "Rotating"/
+       "Paused" toggle that used to sit next to the pin control (the two
+       could visually contradict each other; see the fieldset above). Same
+       checkbox-plus-immediate-submit pattern as the item-level "Enabled"
+       toggle in partials/item_row.html -- still no confirm dialog, still
+       reversible in one click. #}
+    <form method="post" action="/assignments/{{ card.assignment.id }}/enabled" class="paused-form">
       <label class="toggle-label">
-        <input type="checkbox" name="enabled" value="1" {% if card.assignment.enabled %}checked{% endif %}
+        <input type="checkbox" name="paused" value="1"
+               {% if not card.assignment.enabled %}checked{% endif %}
                onchange="this.form.requestSubmit()">
-        {% if card.assignment.enabled %}Rotating{% else %}Paused{% endif %}
+        Paused
       </label>
+      <p class="switch-explain">Box Butler will leave this tonie alone until you switch this off.</p>
     </form>
 
     {# Fix round 1, critical 1: hx-confirm was inert on a plain <form method="post">

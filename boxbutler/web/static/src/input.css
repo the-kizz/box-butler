@@ -373,12 +373,14 @@ label {
    lower-urgency state than DEGRADED, still never colour-only (always
    paired with the pause-circle icon and the word "Paused"). */
 .status-PAUSED { color: var(--warn); font-weight: 600; }
-/* PINNED: deliberate, not unhealthy (final coherence review, the "two
-   channels disagree" bug family) -- distinct from OK's plain green so the
-   pin is visible at a glance, but never the destructive/warn colours,
-   which this project reserves for "needs attention". Always paired with
-   the push-pin icon and the word "Pinned" (colour is never the only
-   signal). */
+/* PINNED (internal token -- rotation.py::pin_active, unchanged): shown to
+   the operator as "Always playing", never the word "Pin", which reads as
+   a passcode (phone-lock PIN, parental control) in a children's product.
+   Deliberate, not unhealthy (final coherence review, the "two channels
+   disagree" bug family) -- distinct from OK's plain green, but never the
+   destructive/warn colours, which this project reserves for "needs
+   attention". Always paired with the push-pin icon and the words "Always
+   playing" (colour is never the only signal). */
 .status-PINNED { color: var(--accent); font-weight: 600; }
 
 .degraded-explain { color: var(--bad); margin: 0; }
@@ -390,15 +392,62 @@ label {
 .up-next { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; }
 .muted { color: var(--muted); }
 
-.pin-form, .run-form, .repair-form, .assign-form, .enabled-form {
+/* "What this tonie plays" (tonie_card.html) -- a real <fieldset>/<legend>
+   radio group replacing the old plain <select> "pin" form and the
+   "Rotating" checkbox that could contradict it. Touch targets ≥44px,
+   ≥8px apart (design-system/box-butler/MASTER.md); focus rings inherit
+   from the global `:focus-visible` rule above, never overridden here. */
+.play-mode-fieldset {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.play-mode-fieldset legend { font-weight: 600; padding: 0 0.25rem; }
+/* Each option its own row, ≥8px apart (the fieldset's own `gap` above) --
+   never packed side by side, so the two are never mistaken for a single
+   two-state toggle. */
+.radio-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 44px;
+}
+.play-mode-radio {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+.radio-label { font-weight: 500; margin: 0; }
+
+/* The item picker (plain <select> below PIN_SEARCH_THRESHOLD, search
+   widget at/above it) is only meaningful once "Always play this one" is
+   chosen. Revealed with `:has()` scoped to the whole card body, not a
+   sibling combinator: the search variant's own forms can't nest inside
+   the radios' <form> (HTML forbids nested forms), so the picker for that
+   case lives outside it as a later sibling in the card, not a sibling of
+   the radio input itself. `:has()` doesn't care about that distance.
+   Pure CSS, no JavaScript involved -- if a browser doesn't support
+   `:has()` the picker is simply always visible, which is not broken,
+   just unconditionally shown. */
+.play-mode-picker { margin-top: 0.5rem; display: none; }
+.card-body:has(.play-mode-always:checked) .play-mode-picker { display: block; }
+
+.play-mode-form, .run-form, .repair-form, .assign-form, .paused-form {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
   margin-top: 0.25rem;
 }
-.pin-form select, .assign-form select { flex: 1; min-width: 10rem; }
-.pin-form .icon { flex-shrink: 0; }
+.play-mode-form { flex-direction: column; align-items: stretch; }
+.play-mode-picker select, .assign-form select { flex: 1; min-width: 10rem; }
+.play-mode-picker .icon { flex-shrink: 0; }
+
+.switch-explain { color: var(--muted); margin: 0.25rem 0 0; }
 
 /* Searchable pin picker (partials/pin_search.html) — at/above
    PIN_SEARCH_THRESHOLD, replaces the plain <select> so a large library

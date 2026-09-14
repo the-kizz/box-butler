@@ -280,7 +280,7 @@ def _cmd_status(deps: AppDeps, args: argparse.Namespace) -> int:
         # UNMANAGED. The row's mere existence made the display *worse* --
         # it now claimed a tonie was fine when nothing will ever manage it.
         #
-        # PINNED (verified in a browser, dashboard fix): pinning an item
+        # FIXED (verified in a browser, dashboard fix): pinning an item
         # freezes the cursor (rotation.choose_next sets rotates=False) but
         # is a deliberate operator choice, not a health problem -- it does
         # not outrank DEGRADED/PAUSED/UNMANAGED (none of which a pin
@@ -290,6 +290,15 @@ def _cmd_status(deps: AppDeps, args: argparse.Namespace) -> int:
         # so this command can never drift out of agreement with the
         # dashboard card about the same assignment (final coherence
         # review: they already have, twice).
+        #
+        # Wording round: the dashboard now spells this out as a sentence
+        # ("Always playing: <title>") since "Pin"/"PINNED" reads as a
+        # passcode in a children's product. STATE here is a fixed-width
+        # column, not a sentence, so it needs a short token instead --
+        # "FIXED" (as in "fixed on one item"), not "PINNED". Internal
+        # identifiers (`pinned_item_id`, `pin_active`, the `/pin` route)
+        # are unaffected -- this is display text only, same as the
+        # dashboard's own status label vs. its internal `status` field.
         if a.state == AssignmentState.DEGRADED:
             state = str(a.state)
         elif not a.enabled:
@@ -297,7 +306,7 @@ def _cmd_status(deps: AppDeps, args: argparse.Namespace) -> int:
         elif a.library_id is None:
             state = "UNMANAGED"
         elif pin_active(a, items):
-            state = "PINNED"
+            state = "FIXED"
         else:
             state = str(a.state)
         rows.append((target.name, state, holds, nxt, last_success, ready))

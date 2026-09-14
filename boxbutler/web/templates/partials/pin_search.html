@@ -14,10 +14,10 @@
    partial, rather than doing nothing. #}
 <div class="pin-search" id="pin-search-{{ card.assignment.id }}">
   <form method="get" action="/assignments/{{ card.assignment.id }}/pin-options" class="pin-search-form">
-    <label class="sr-only" for="pin-search-q-{{ card.assignment.id }}">Search items to pin on {{ card.assignment.target_name }}</label>
+    <label class="sr-only" for="pin-search-q-{{ card.assignment.id }}">Search items to always play on {{ card.assignment.target_name }}</label>
     {{ icon("push-pin") }}
     <input type="search" id="pin-search-q-{{ card.assignment.id }}" name="q" value=""
-           placeholder="Search to pin&hellip;" autocomplete="off"
+           placeholder="Search this library&hellip;" autocomplete="off"
            hx-get="/assignments/{{ card.assignment.id }}/pin-options"
            hx-trigger="input changed delay:300ms, search"
            hx-target="#pin-search-results-{{ card.assignment.id }}"
@@ -27,7 +27,7 @@
 
   {% if card.assignment.pinned_item_id %}
   <form method="post" action="/assignments/{{ card.assignment.id }}/pin" class="pin-clear-form">
-    <button type="submit" class="btn btn-secondary">Clear pin</button>
+    <button type="submit" class="btn btn-secondary">Switch to rotating</button>
   </form>
   {% endif %}
 
