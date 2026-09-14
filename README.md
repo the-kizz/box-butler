@@ -65,7 +65,7 @@ audiobook over two weeks, and one favourite that never changes.
 ```yaml
 services:
   box-butler:
-    image: ghcr.io/the-kizz/box-butler:0.1.1
+    image: ghcr.io/the-kizz/box-butler:0.1.2
     container_name: box-butler
     restart: unless-stopped
     ports:
@@ -100,7 +100,7 @@ docker run -d --name box-butler -p 8410:8410 \
   -e BOXBUTLER_SINK_USER=you@example.com \
   -e BOXBUTLER_SINK_PASSWORD=your-tonies-password \
   -v "$PWD/data:/data" -v "$PWD/cache:/cache" \
-  ghcr.io/the-kizz/box-butler:0.1.1
+  ghcr.io/the-kizz/box-butler:0.1.2
 ```
 
 Then open `http://localhost:8410`, finish the three-step wizard, add a library and assign it to a

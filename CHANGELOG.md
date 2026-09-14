@@ -3,6 +3,28 @@
 All notable changes to Box Butler are documented in this file. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.1.2] — 2026-09-15
+
+### Changed
+
+- **A session key is generated on first start** and stored in the data volume
+  (`/data/secret_key`, mode 0600) instead of being a required variable. Requiring one invited a weak
+  one; a generated `token_urlsafe(48)` is stronger than anything typed by hand, and persisting it
+  means restarts and upgrades no longer log everyone out. Set `BOXBUTLER_SECRET_KEY` yourself and it
+  still wins. If the key cannot be persisted the app **refuses to start** rather than run with an
+  ephemeral one that would silently invalidate every session on the next restart.
+- The quick start is down to **two variables** — just the tonies account.
+- Admin credentials deliberately unchanged: the first-run wizard still creates the account, and no
+  default or generated password is printed anywhere. OWASP ASVS is explicit that there should be no
+  default passwords, generated or static.
+
+### Added
+
+- The README now carries the compose file inline, a `docker run` one-liner, and a table of the
+  environment variables — previously you had to fetch the compose file to read it.
+- Documented that the Toniebox plays from its own storage, so a change in the cloud is not heard
+  until the box next checks; lifting the tonie off and replacing it makes it fetch.
+
 ## [0.1.1] — 2026-09-14
 
 ### Changed
