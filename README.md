@@ -1,10 +1,11 @@
 # Box Butler
 
-**Keeps Toniebox Creative-Tonies loaded with fresh audio on a schedule, so nobody has to do it by
-hand in the app at bedtime.**
+**Manage what's on your Toniebox Creative-Tonies.**
 
-Point it at a library — a YouTube playlist, a podcast feed, a folder of your own files — assign it to
-a tonie, and it rotates something new in each night. Self-hosted, one container.
+Build libraries from your own audio — a folder of files, a podcast feed, a YouTube playlist, an
+upload — then choose, per tonie, what goes on it and whether it changes: a fresh story each night, a
+fixed set that stays put, an audiobook across nights, or one story on repeat. Self-hosted, one
+container, no app fiddling at bedtime.
 
 > [!IMPORTANT]
 > Unofficial tool, **not associated with Boxine GmbH** ("tonies", "Toniebox" and "Creative-Tonie"
@@ -28,12 +29,24 @@ first.
 
 <img width="520" alt="History: what each tonie held, and what replaced it when" src="docs/screenshots/history-light.png">
 
+## What a tonie can do
+
+Each tonie gets a library and one behaviour. That choice is the whole product:
+
+| Behaviour | What goes on the tonie | Changes by itself? |
+|---|---|---|
+| `single` | One item, trimmed to fit | Yes — a new one each run |
+| `album` | The whole library, as chapters | No |
+| `serial` | Fills to the cap, continues where it left off next time | Yes — works through it |
+| *Always play this one* | Exactly the item you choose | No — until you change it |
+
+**[Worked examples → docs/GUIDE.md](docs/GUIDE.md)** — a story a night, a fixed album for the car, an
+audiobook over two weeks, and one favourite that never changes.
+
 ## Features
 
 - **Six ways in** — YouTube video or playlist, podcast RSS, upload, a watched folder, direct URL.
-- **Three modes** — `single` (one story, trimmed to fit), `album` (static), `serial` (advances through
-  a long audiobook across nights).
-- **Pin** an item; **shuffle or ordered**; **duplicate avoidance** across tonies with a repeat cooldown.
+- **Shuffle or ordered**, **duplicate avoidance** across tonies, and a repeat cooldown.
 - **Prefetch**, so a broken extractor doesn't cost you the night it breaks.
 - **Web UI, CLI and Prometheus metrics** — dry-run is the default everywhere; writing needs `--apply`.
 
