@@ -14,7 +14,7 @@ placed in `config.yml` for one of these is silently ignored rather than accident
 | `BOXBUTLER_SINK_PASSWORD` | yes | Tonies cloud account password |
 | `BOXBUTLER_ADMIN_USER` | no | Web UI admin username (bootstrap only — omit both to use the setup wizard instead) |
 | `BOXBUTLER_ADMIN_PASSWORD` | no | Web UI admin password (bootstrap only — omit both to use the setup wizard instead) |
-| `BOXBUTLER_SECRET_KEY` | yes | Session-signing key — any long random string |
+| `BOXBUTLER_SECRET_KEY` | no | Session-signing key. Omit it and one is generated with `secrets.token_urlsafe(48)` on first start and persisted at `<data_dir>/secret_key` (mode 0600), so it stays stable across restarts; set it yourself only if you want to manage it |
 | `BOXBUTLER_NOTIFY_TOKEN` | no | Bearer token for the notification server, if it needs one |
 | `BOXBUTLER_DATA_DIR` | no | SQLite store + snapshots (default `/data`) |
 | `BOXBUTLER_CACHE_DIR` | no | Fetched/rendered audio cache (default `/cache`) |

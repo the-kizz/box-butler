@@ -81,12 +81,11 @@ services:
       - /path/to/media:/media:ro    # optional: your own audio, read-only
 ```
 
-**`.env`** beside it — three values are all you need:
+**`.env`** beside it — two values are all you need:
 
 ```ini
 BOXBUTLER_SINK_USER=you@example.com
 BOXBUTLER_SINK_PASSWORD=your-tonies-password
-BOXBUTLER_SECRET_KEY=any-long-random-string
 ```
 
 ```bash
@@ -100,7 +99,6 @@ docker run -d --name box-butler -p 8410:8410 \
   -e TZ=Australia/Melbourne \
   -e BOXBUTLER_SINK_USER=you@example.com \
   -e BOXBUTLER_SINK_PASSWORD=your-tonies-password \
-  -e BOXBUTLER_SECRET_KEY=any-long-random-string \
   -v "$PWD/data:/data" -v "$PWD/cache:/cache" \
   ghcr.io/the-kizz/box-butler:0.1.1
 ```
@@ -118,7 +116,7 @@ Credentials come from environment variables only — never from a config file, s
 |---|---|---|
 | `BOXBUTLER_SINK_USER` | **yes** | Your tonies account email |
 | `BOXBUTLER_SINK_PASSWORD` | **yes** | Your tonies account password |
-| `BOXBUTLER_SECRET_KEY` | **yes** | Signs session cookies — any long random string |
+| `BOXBUTLER_SECRET_KEY` | no | Signs session cookies. Omit it and one is generated on first start and stored in the data volume (`/data/secret_key`), so it survives restarts; set it yourself only if you want to manage it |
 | `BOXBUTLER_ADMIN_USER` | no | Seeds the web login; omit both and the first-run wizard creates it |
 | `BOXBUTLER_ADMIN_PASSWORD` | no | As above |
 | `BOXBUTLER_NOTIFY_TOKEN` | no | Bearer token, only if your ntfy server needs one |

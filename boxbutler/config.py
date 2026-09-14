@@ -18,13 +18,23 @@ Two rules this module exists to enforce structurally, not by convention:
 Precedence, low to high: dataclass defaults <- YAML (nested, as in
 `config.example.yml`) <- `BOXBUTLER_*` env overrides (flat). Every field
 has a working default (spec §7's "zero-config" requirement) except the
-three required secrets (`sink_user`, `sink_password`, `secret_key`),
-which have none — this project's binding rule is that an unset
-requirement is raised, never guessed. `admin_user`/`admin_password` are
-secrets too but are deliberately optional: their absence is what makes
-the first-run setup wizard (`web/routes/setup.py`) reachable at all —
-see `_REQUIRED_SECRET_FIELDS` below. `notify_token` is likewise optional
+two required sink secrets (`sink_user`, `sink_password`), which have
+none — this project's binding rule is that an unset requirement is
+raised, never guessed. `admin_user`/`admin_password` are secrets too
+but are deliberately optional: their absence is what makes the
+first-run setup wizard (`web/routes/setup.py`) reachable at all — see
+`_REQUIRED_SECRET_FIELDS` below. `notify_token` is likewise optional
 (`build_notifier` falls back to a no-op notifier without it).
+
+`secret_key` is neither required nor guessed: an operator-supplied
+`BOXBUTLER_SECRET_KEY` (env or YAML — though YAML is excluded per rule 1
+above, so in practice env) always wins, but if it's absent
+`_resolve_secret_key` generates one with `secrets.token_urlsafe(48)` and
+persists it at `<data_dir>/secret_key` (mode 0600) so it survives a
+restart — a key that changed on every boot would invalidate every
+session and push operators straight back to hardcoding a weak one. See
+`_resolve_secret_key` for the corrupt-file and unwritable-directory
+cases.
 
 `Settings` itself is the *env+YAML* configuration only (spec §3.1): a
 handful of these fields (`schedule`, `timezone`, `cap_seconds`,
@@ -40,6 +50,9 @@ next run with no restart.
 """
 from __future__ import annotations
 
+import logging
+import secrets
+import stat
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -58,6 +71,9 @@ from boxbutler.store.db import Store
 class ConfigError(Exception):
     """Configuration is invalid or incomplete. The message names keys,
     never values — see the module docstring, rule 2."""
+
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------- Settings
@@ -174,11 +190,83 @@ _SECRET_ENV_VARS: dict[str, str] = {
 # exactly one of the pair is set (a likely typo), and `seed_db_settings`/
 # the setup POST gate are unchanged — an existing deployment with both
 # set keeps bootstrapping exactly as before, with no wizard ever shown.
+# `secret_key` is excluded too, as of the generate-and-persist change
+# above: requiring it invited a weak, hand-typed value where
+# `_resolve_secret_key`'s generated one is strictly stronger, and unlike
+# the sink credentials there is no external account it has to match, so
+# there is nothing an operator can supply that a generated key can't do
+# just as well.
 _REQUIRED_SECRET_FIELDS = tuple(
-    f for f in _SECRET_ENV_VARS if f not in ("notify_token", "admin_user", "admin_password")
+    f for f in _SECRET_ENV_VARS
+    if f not in ("notify_token", "admin_user", "admin_password", "secret_key")
 )
 
 _YAML_SECTIONS = ("app", "notify", "sink")
+
+
+def _resolve_secret_key(data_dir: Path) -> str:
+    """Return the session-signing key to use when no `BOXBUTLER_SECRET_KEY`
+    was supplied: read `<data_dir>/secret_key` if it holds a real value,
+    otherwise generate one with `secrets.token_urlsafe(48)` and persist it
+    there at mode 0600 before returning it.
+
+    Persisted, not regenerated every start: a key that changes on reboot
+    invalidates every session, which is exactly the pressure that pushes
+    an operator toward hardcoding a weak one -- the thing this whole
+    change exists to avoid.
+
+    A zero-byte or whitespace-only file is corruption (e.g. a crashed
+    write), not a real key. Decision: treat it the same as "absent" and
+    regenerate/overwrite it, rather than raise. Unlike a config file, an
+    operator has no reason to hand-edit this file and no path to "fix"
+    it themselves -- self-healing here costs nothing an unwritable-file
+    raise would save, and it keeps the fresh-install and
+    recovering-from-corruption paths identical.
+
+    An unwritable data directory is a different failure mode: silently
+    falling back to an in-memory-only key would run this boot fine and
+    then log every session out on the *next* restart, with no record of
+    what changed. That is exactly the "unknown state papered over" shape
+    this module's rule 2 exists to forbid, so it raises `ConfigError`
+    instead.
+    """
+    key_file = data_dir / "secret_key"
+
+    try:
+        existing = key_file.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        existing = ""
+    except OSError as exc:
+        raise ConfigError(
+            f"could not read {key_file} to load the session key: {exc}"
+        ) from exc
+    if existing:
+        return existing
+
+    key = secrets.token_urlsafe(48)
+    try:
+        data_dir.mkdir(parents=True, exist_ok=True)
+        key_file.write_text(key, encoding="utf-8")
+        key_file.chmod(stat.S_IRUSR | stat.S_IWUSR)  # 0600
+    except OSError as exc:
+        # Never log `exc`'s str() blindly if it were ever changed to
+        # embed the key -- it doesn't (OSError only carries the
+        # filename/errno), but the rule this module holds everywhere
+        # else (name the problem, never the secret) applies here too.
+        raise ConfigError(
+            f"could not persist a generated session key to {key_file}: {exc}. "
+            "BOXBUTLER_SECRET_KEY must be set explicitly, or the data "
+            "directory made writable, before box-butler can start -- an "
+            "in-memory-only key would log every session out on the next "
+            "restart."
+        ) from exc
+
+    logger.info(
+        "no BOXBUTLER_SECRET_KEY set -- generated a new session key and "
+        "stored it at %s (mode 0600); it will persist across restarts",
+        key_file,
+    )
+    return key
 
 
 def _flatten_yaml(doc: dict) -> dict[str, Any]:
@@ -223,7 +311,9 @@ def _coerce_env(field_name: str, raw: str) -> Any:
 def load_settings(yaml_path: Path | None, env: Mapping[str, str]) -> Settings:
     """Build a `Settings` from `yaml_path` (may be `None`) overridden by
     `env`. Raises `ConfigError` listing every missing required secret by
-    name if any of the five are absent.
+    name if either of the two sink credentials is absent. `secret_key`
+    is resolved separately by `_resolve_secret_key` (generate-and-persist)
+    rather than required.
     """
     doc: dict = {}
     if yaml_path is not None:
@@ -319,6 +409,16 @@ def load_settings(yaml_path: Path | None, env: Mapping[str, str]) -> Settings:
         )
     for field_name, env_name in _SECRET_ENV_VARS.items():
         values[field_name] = env.get(env_name) or None
+
+    # secret_key: an explicit BOXBUTLER_SECRET_KEY (just assigned above)
+    # always wins. Absent that, generate-and-persist rather than require
+    # -- see `_resolve_secret_key` and the module docstring.
+    if not values.get("secret_key"):
+        # Same default as the `Settings.data_dir` field itself -- kept as
+        # a literal here since a dataclass field's `default_factory` is
+        # not retrievable off the class once decorated.
+        resolved_data_dir = values.get("data_dir", Path("/data"))
+        values["secret_key"] = _resolve_secret_key(Path(resolved_data_dir))
 
     return Settings(**values)
 
