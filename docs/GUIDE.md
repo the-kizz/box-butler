@@ -81,6 +81,37 @@ can see it before you run.
 For sleep stories this is usually the intent. For anything with a plot, split it into parts and use
 `serial`.
 
+## The box may still play the old story
+
+Box Butler changes what is **in the cloud**. It does not push anything to your Toniebox, and the box
+plays from its own storage — so there is a gap between "changed" and "heard".
+
+Observed behaviour, if you switch the box on with a tonie already sitting on it: it often plays the
+**old** content, with a steady green light. Lift the tonie off and put it back down and the light
+goes flashing blue — the box notices the content has changed, downloads the new version and plays
+that.
+
+That is worth knowing when a change matters for a particular night: **lift and replace the tonie**
+rather than assuming the box has caught up. It is also why the default run time is 15:00 rather than
+bedtime — it leaves hours for the box to pick the change up on its own.
+
+A related tell: Box Butler's screens report what the **cloud** holds, not what the box has. "What's
+on it now" means "what the box will get next time it asks".
+
+### What the box stores, and what nobody has documented
+
+The box keeps downloaded audio on an internal SD card, one directory per tonie, as Opus at roughly
+96–116 kbps. A full 89-minute Creative-Tonie is therefore about **65–75 MB** on the box, and it is
+reported to hold 200+ tonies' worth.
+
+What is **not** documented anywhere — not in the official support pages, not in the community wiki —
+is what happens when that fills up, or whether superseded Creative-Tonie content is ever removed.
+This matters more for a tool that rotates content than for ordinary use: a nightly rotation is a new
+~70 MB download every night, so a single tonie can account for tens of gigabytes of distinct audio
+over a year. Either the box evicts something or it eventually runs out, and we cannot tell you which.
+
+If you see a box misbehave after months of nightly rotation, this is the first thing to suspect.
+
 ## Pausing a tonie
 
 **Paused** is a separate switch from what a tonie plays. It means *leave this tonie alone entirely* —

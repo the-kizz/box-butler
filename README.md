@@ -27,6 +27,12 @@ last night's story in place. If a swap fails midway the tonie is marked `DEGRADE
 repairs it before rotating anything new. Every swap writes a write-once snapshot of what was there
 first.
 
+> [!NOTE]
+> Box Butler changes what is **in the cloud**. Your Toniebox plays from its own storage and picks
+> changes up when it next checks — switch a box on with the tonie already on it and you may hear the
+> old story. Lifting the tonie off and putting it back makes it fetch the new one.
+> [More on this →](docs/GUIDE.md#the-box-may-still-play-the-old-story)
+
 <img width="520" alt="History: what each tonie held, and what replaced it when" src="docs/screenshots/history-light.png">
 
 ## What a tonie can do
