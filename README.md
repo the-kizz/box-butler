@@ -60,31 +60,75 @@ audiobook over two weeks, and one favourite that never changes.
 
 ## Quick start
 
-```bash
-mkdir box-butler && cd box-butler
-curl -fsSLO https://raw.githubusercontent.com/the-kizz/box-butler/main/compose/box-butler.yml
-curl -fsSLO https://raw.githubusercontent.com/the-kizz/box-butler/main/compose/box-butler.env.example
-cp box-butler.env.example .env
-docker compose -f box-butler.yml up -d
+**`compose.yml`** — the whole thing:
+
+```yaml
+services:
+  box-butler:
+    image: ghcr.io/the-kizz/box-butler:0.1.1
+    container_name: box-butler
+    restart: unless-stopped
+    ports:
+      - "8410:8410"
+    environment:
+      - TZ=Australia/Melbourne      # your zone — don't leave this at UTC
+      - PUID=1000
+      - PGID=1000
+    env_file: .env
+    volumes:
+      - ./data:/data                # SQLite + snapshots — the bit worth backing up
+      - ./cache:/cache              # downloaded audio — large, rebuilds itself
+      - /path/to/media:/media:ro    # optional: your own audio, read-only
 ```
+
+**`.env`** beside it — three values are all you need:
 
 ```ini
-BOXBUTLER_SINK_USER=you@example.com     # your tonies account
-BOXBUTLER_SINK_PASSWORD=
-BOXBUTLER_SECRET_KEY=                   # any long random string
-# BOXBUTLER_ADMIN_USER / BOXBUTLER_ADMIN_PASSWORD optional — leave unset and
-# the first-run wizard creates the account
-# BOXBUTLER_NOTIFY_TOKEN=               # only if your ntfy server needs one
+BOXBUTLER_SINK_USER=you@example.com
+BOXBUTLER_SINK_PASSWORD=your-tonies-password
+BOXBUTLER_SECRET_KEY=any-long-random-string
 ```
 
-Open `http://localhost:8410`, finish the wizard, add a library, assign it to a tonie. `boxbutler run`
-prints the plan and exits; `boxbutler run --apply` is the one that acts.
+```bash
+docker compose up -d
+```
+
+Or without compose, to try it:
+
+```bash
+docker run -d --name box-butler -p 8410:8410 \
+  -e TZ=Australia/Melbourne \
+  -e BOXBUTLER_SINK_USER=you@example.com \
+  -e BOXBUTLER_SINK_PASSWORD=your-tonies-password \
+  -e BOXBUTLER_SECRET_KEY=any-long-random-string \
+  -v "$PWD/data:/data" -v "$PWD/cache:/cache" \
+  ghcr.io/the-kizz/box-butler:0.1.1
+```
+
+Then open `http://localhost:8410`, finish the three-step wizard, add a library and assign it to a
+tonie. Nothing touches a tonie until you ask: `boxbutler run` prints the plan and exits,
+`boxbutler run --apply` is the one that acts.
 
 ## Configuration
 
-Credentials come from environment variables only. Everything else — schedule, timezone, duration cap,
-cache budget, prefetch depth, duplicate rules, notifications — lives in `config.yml` or the Settings
-screen and applies on the next run, no restart.
+Credentials come from environment variables only — never from a config file, so a password left in
+`config.yml` is ignored rather than quietly honoured.
+
+| Variable | Required | What it is |
+|---|---|---|
+| `BOXBUTLER_SINK_USER` | **yes** | Your tonies account email |
+| `BOXBUTLER_SINK_PASSWORD` | **yes** | Your tonies account password |
+| `BOXBUTLER_SECRET_KEY` | **yes** | Signs session cookies — any long random string |
+| `BOXBUTLER_ADMIN_USER` | no | Seeds the web login; omit both and the first-run wizard creates it |
+| `BOXBUTLER_ADMIN_PASSWORD` | no | As above |
+| `BOXBUTLER_NOTIFY_TOKEN` | no | Bearer token, only if your ntfy server needs one |
+| `TZ` | no | Your timezone. Don't leave it at UTC — see the notes |
+| `BOXBUTLER_DATA_DIR` | no | Default `/data` |
+| `BOXBUTLER_CACHE_DIR` | no | Default `/cache` |
+| `BOXBUTLER_MEDIA_ROOT` | no | Default `/media`, read-only |
+
+Everything else — schedule, duration cap, cache budget, prefetch depth, duplicate rules,
+notifications — lives in `config.yml` or the Settings screen and applies on the next run, no restart.
 
 <img width="520" alt="Settings: schedule, timezone, cap, duplicate rules, notifications" src="docs/screenshots/settings-light.png">
 
