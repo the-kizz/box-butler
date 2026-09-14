@@ -75,8 +75,14 @@ A Creative-Tonie holds a fixed amount of audio (the cloud's limit is 5400 second
 
 **Your files are never modified** — the trim happens on a copy in the cache, and folder libraries are
 mounted read-only. But a two-and-a-half hour story becomes its first 89 minutes on the tonie, and the
-ending is not on there. Library rows show the duration and say when an item will be trimmed, so you
-can see it before you run.
+ending is not on there.
+
+Library rows say so before you ever run, so it is never a surprise:
+
+<img width="620" alt="Library rows: short items marked ok, long ones marked trimmed to 89m, one of unknown duration" src="screenshots/trim-warning.png">
+
+An item whose length cannot be determined says *unknown duration* rather than guessing. Folder scans
+probe each file, so a watched folder gives real durations rather than blanks.
 
 For sleep stories this is usually the intent. For anything with a plot, split it into parts and use
 `serial`.
