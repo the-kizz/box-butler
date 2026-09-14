@@ -1,13 +1,26 @@
 # Changelog
 
 All notable changes to Box Butler are documented in this file. Format loosely follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project has not yet made a tagged
-release.
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.1.1] — 2026-09-14
 
-Everything to date. No version of Box Butler has been run against real tonies in a real,
-ongoing deployment yet — see the README's Status section.
+### Changed
+
+- The dashboard now asks **what a tonie plays** as a plain either/or — *Rotate through the
+  library* or *Always play this one* — instead of a "pin", which reads as a passcode. Pausing is
+  a separate switch, so the card can no longer show "Rotating" while an item is in fact frozen.
+- Libraries over 50 items get a **searchable picker** rather than a dropdown holding every item.
+  An 838-item library previously rendered 839 `<option>` tags and 108 KB of HTML per tonie.
+- Folder scans now **probe durations**, so library rows show a real length instead of "unknown"
+  and say when an item will be trimmed to fit the tonie.
+- The project describes itself as a Creative-Tonie **manager** rather than a rotator; worked
+  examples moved to `docs/GUIDE.md`.
+
+## [0.1.0] — 2026-09-14
+
+First release. Proven end to end against real Creative-Tonies: staged, verified, snapshotted,
+cleared, uploaded and settled an 89-minute story, then correctly did nothing on a second run.
 
 ### Added
 

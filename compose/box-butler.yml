@@ -15,7 +15,7 @@
 
 services:
   box-butler:
-    image: ghcr.io/the-kizz/box-butler:0.1.0
+    image: ghcr.io/the-kizz/box-butler:0.1.1
     # image: ghcr.io/the-kizz/box-butler:0.1      # track the latest 0.1.x patch instead of pinning exactly
     container_name: box-butler
     restart: unless-stopped
