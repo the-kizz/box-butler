@@ -1,0 +1,320 @@
+{% extends "base.html" %}
+{% from "partials/_icons.html" import icon %}
+
+{% block content %}
+<h1 class="page-title">Settings</h1>
+
+{# submit-feedback / success-feedback: an explicit confirmation banner,
+   not just a silent redirect back to the same page. #}
+<div id="settings-live" class="sr-only" aria-live="polite" role="status">
+  {%- if saved %}Settings saved.{% endif -%}
+</div>
+{% if saved %}
+<p class="settings-saved">Settings saved.</p>
+{% endif %}
+
+{% if errors %}
+{# error-clarity: every error names the field, the value that was
+   rejected, and what a valid value looks like. Nothing was written to
+   the store — the form below shows exactly what was submitted so
+   nothing needs retyping. #}
+<div class="settings-errors" role="alert" aria-live="assertive">
+  <p class="settings-errors-title">Couldn't save settings:</p>
+  <ul>
+    {% for e in errors %}<li>{{ e }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<form method="post" action="/settings" class="settings-form" novalidate>
+
+  {# Timezone and schedule sit together at the top, unadvanced
+     (design-system/box-butler/pages/settings.md): these are the two
+     settings that change behaviour most, and the pair that must never be
+     set inconsistently with each other. #}
+  <section class="settings-section settings-primary">
+    <h2>When it runs</h2>
+
+    <label for="schedule-input">Schedule (24-hour, local time)</label>
+    <input id="schedule-input" name="schedule" type="text"
+           pattern="^([01]\d|2[0-3]):[0-5]\d$"
+           value="{{ v.schedule }}" placeholder="15:00" autocomplete="off"
+           oninput="bbClearFieldError('schedule-input')" onblur="bbValidateSchedule(this)">
+    <span id="schedule-hint" class="field-hint" aria-live="polite">
+      Runs once a day at this time, in the timezone below.
+    </span>
+
+    <label for="timezone-select">Timezone</label>
+    <select id="timezone-select" name="timezone">
+      {% for tz in timezones %}
+      <option value="{{ tz }}" {% if tz == v.timezone %}selected{% endif %}>{{ tz }}</option>
+      {% endfor %}
+    </select>
+    <span class="field-hint">
+      All schedule arithmetic (including daylight saving changes) is calculated against this zone,
+      not the server's clock.
+    </span>
+  </section>
+
+  {# IMPORTANT 2 (Task 12 review round 1): whether a parent will be told
+     when a tonie may be empty at bedtime is not an Advanced detail — the
+     server/topic/kind plumbing stays in Advanced, but the yes/no answer
+     is surfaced here, next to schedule and timezone, with a link to open
+     Advanced rather than requiring it to be found. Chose the status-line
+     form (over moving the checkbox itself up) because the checkbox alone
+     answers "will notify_on_failure fire" but not "is a channel even
+     configured" — the status line covers both in one sentence. #}
+  <section class="settings-section settings-primary settings-alerts-status">
+    <h2>Failure alerts</h2>
+    <p class="settings-alert-line">
+      {%- if not v.notify_on_failure -%}
+      Failure alerts: off.
+      {%- elif v.notify_kind == "none" -%}
+      Failure alerts: on, but nothing will be sent — no notification server is configured.
+      {%- else -%}
+      Failure alerts: on via ntfy.
+      {%- endif %}
+      <a href="#notify-kind-select" onclick="bbOpenAdvanced(); return true;">Configure in Advanced</a>
+    </p>
+  </section>
+
+  {# progressive-disclosure: everything else has a working default and
+     lives behind Advanced — cap, cache budget, prefetch depth, loudnorm
+     default, duplicate avoidance + cooldown, and notifications. Nobody
+     needs to open this to get a working install. #}
+  <details class="settings-advanced" id="settings-advanced">
+    <summary>
+      <span class="settings-advanced-summary-main">
+        {{ icon("caret-right", "settings-advanced-chevron") }}
+        <span class="settings-advanced-label">Advanced</span>
+      </span>
+      <span class="field-hint settings-advanced-hint">
+        Cap, cache, prefetch, notifications — all have working defaults.
+      </span>
+    </summary>
+
+    <section class="settings-section">
+      <h2>Length and audio</h2>
+
+      <label for="cap-seconds-input">Per-tonie cap (seconds)</label>
+      <input id="cap-seconds-input" name="cap_seconds" type="number" min="1" max="5400"
+             value="{{ v.cap_seconds }}" onblur="bbValidateCap(this)">
+      <span id="cap-hint" class="field-hint" aria-live="polite">
+        {{ v.cap_seconds }} seconds leaves
+        {{ sink_max_seconds - v.cap_seconds if sink_max_seconds > v.cap_seconds else 0 }}
+        second(s) of headroom under the hard {{ sink_max_seconds }}-second cap. Values above
+        {{ sink_max_seconds }} are automatically brought back down to it — it can never be raised.
+      </span>
+
+      <label class="toggle-label" for="loudnorm-toggle">
+        <input id="loudnorm-toggle" type="checkbox" name="loudnorm_default" value="1"
+               {% if v.loudnorm_default %}checked{% endif %}>
+        Normalise loudness by default
+      </label>
+      <span class="field-hint">
+        Off by default on purpose: bedtime stories often get quieter on purpose near the end, and
+        normalising raises that quiet part back up. Turn this on only if a library mixes
+        loud and quiet sources unintentionally; it can still be overridden per item.
+      </span>
+    </section>
+
+    <section class="settings-section">
+      <h2>Avoiding repeats</h2>
+
+      <label class="toggle-label" for="avoid-dupes-toggle">
+        <input id="avoid-dupes-toggle" type="checkbox" name="avoid_duplicates_across_tonies" value="1"
+               {% if v.avoid_duplicates_across_tonies %}checked{% endif %}>
+        Avoid loading the same story on two tonies at once
+      </label>
+      <span class="field-hint">
+        Applies to single-story tonies only. If every other option is exhausted, a tonie keeps what
+        it already has rather than going empty.
+      </span>
+
+      <label for="cooldown-input">Repeat cooldown (days)</label>
+      <input id="cooldown-input" name="repeat_cooldown_days" type="number" min="0"
+             value="{{ v.repeat_cooldown_days }}" onblur="bbValidateNonNegative(this, 'cooldown-hint')">
+      <span id="cooldown-hint" class="field-hint" aria-live="polite">
+        0 turns this off. A higher number also skips anything a tonie held within that many days.
+      </span>
+    </section>
+
+    <section class="settings-section">
+      <h2>Cache</h2>
+
+      <label for="budget-input">Cache budget (GB)</label>
+      <input id="budget-input" name="cache_budget_gb" type="number" min="1"
+             value="{{ v.cache_budget_gb }}" onblur="bbValidateNonNegative(this, 'budget-hint', 1)">
+      <span id="budget-hint" class="field-hint" aria-live="polite">
+        Oldest unused audio is evicted first once the cache grows past this size. Renditions
+        (trimmed/normalised copies) are evicted before source files, since a rendition rebuilds
+        in seconds.
+      </span>
+
+      <label for="prefetch-input">Prefetch depth</label>
+      <input id="prefetch-input" name="prefetch_depth" type="number" min="0"
+             value="{{ v.prefetch_depth }}" onblur="bbValidateNonNegative(this, 'prefetch-hint')">
+      <span id="prefetch-hint" class="field-hint" aria-live="polite">
+        How many nights ahead to stage audio, so a broken source has time to be noticed before it's
+        needed.
+      </span>
+    </section>
+
+    <section class="settings-section">
+      <h2>Notifications</h2>
+
+      <label for="notify-kind-select">Notification service</label>
+      <select id="notify-kind-select" name="notify_kind">
+        <option value="none" {% if v.notify_kind == "none" %}selected{% endif %}>None</option>
+        <option value="ntfy" {% if v.notify_kind == "ntfy" %}selected{% endif %}>ntfy</option>
+      </select>
+      <span class="field-hint">Off by default. Pick ntfy to send alerts to your own server.</span>
+
+      <label for="notify-server-input">ntfy server</label>
+      <input id="notify-server-input" name="notify_server" type="text"
+             value="{{ v.notify_server }}" placeholder="https://ntfy.example.org" autocomplete="off">
+      <span class="field-hint">The base URL of your ntfy server (self-hosted or ntfy.sh).</span>
+
+      <label for="notify-topic-input">ntfy topic</label>
+      <input id="notify-topic-input" name="notify_topic" type="text"
+             value="{{ v.notify_topic }}" placeholder="box-butler" autocomplete="off">
+
+      <label for="notify-token-note" class="settings-token-label">Access token</label>
+      <p id="notify-token-note" class="field-hint settings-token-note">
+        {% if token_set %}
+        A token is currently set via the <code>{{ token_env_var }}</code> environment variable.
+        {% else %}
+        No token is set. If your ntfy topic needs one, set the <code>{{ token_env_var }}</code>
+        environment variable — it is never entered or shown here.
+        {% endif %}
+      </p>
+
+      {# IMPORTANT 1 (Task 12 review round 1): chose option (b) —
+         `notify_on_failure` keeps the spec's stated default of True
+         rather than being silently downgraded to False when
+         notify_kind == "none". A checked-but-inert box with no
+         explanation is the defect; telling the operator plainly that
+         nothing will be sent yet is the fix, and it preserves the
+         spec-stated default rather than quietly overriding it. #}
+      {% if v.notify_kind == "none" %}
+      <p class="field-hint settings-notify-none-note" role="note">
+        No notification server is configured, so nothing will be sent even if these are checked.
+      </p>
+      {% endif %}
+
+      <label class="toggle-label" for="notify-failure-toggle">
+        <input id="notify-failure-toggle" type="checkbox" name="notify_on_failure" value="1"
+               {% if v.notify_on_failure %}checked{% endif %}>
+        Notify on failure — a run broke, or a tonie may be empty at bedtime
+      </label>
+      <label class="toggle-label" for="notify-success-toggle">
+        <input id="notify-success-toggle" type="checkbox" name="notify_on_success" value="1"
+               {% if v.notify_on_success %}checked{% endif %}>
+        Notify on success — what changed on each tonie
+      </label>
+      <label class="toggle-label" for="notify-debug-toggle">
+        <input id="notify-debug-toggle" type="checkbox" name="notify_on_debug" value="1"
+               {% if v.notify_on_debug %}checked{% endif %}>
+        Notify on every planning decision — for diagnosing a run, not for living with
+      </label>
+    </section>
+  </details>
+
+  <button type="submit" class="btn btn-primary settings-save">Save settings</button>
+</form>
+
+{# destructive-emphasis: export/import is visually separated (its own
+   bordered, differently-headed section) from ordinary settings, same
+   pattern as library.html's delete-library block. #}
+<section class="settings-export-import">
+  <h2>Export &amp; import</h2>
+  <p class="muted">
+    Export saves every library, item and assignment as a portable JSON file. Import merges a file
+    back in — matching by name and source, never duplicating what already exists.
+  </p>
+
+  <a class="btn btn-secondary" href="/api/export" download="box-butler-export.json">Export as JSON</a>
+
+  <form method="post" action="/api/import" enctype="multipart/form-data" class="settings-import-form"
+        onsubmit="return bbConfirmImport(this);">
+    <label for="import-file">Import a JSON file</label>
+    <input id="import-file" name="file" type="file" accept="application/json" required>
+
+    <label class="toggle-label settings-replace-toggle" for="import-replace">
+      <input id="import-replace" type="checkbox" name="replace" value="1">
+      Replace — delete anything not in the file (not yet supported)
+    </label>
+
+    <button type="submit" class="btn btn-destructive">Import</button>
+  </form>
+</section>
+
+<script>
+  // inline-validation: validate on blur, not per keystroke — the server
+  // re-validates regardless of anything here (settings.py), this is a
+  // courtesy so a mistyped schedule or a raised cap is caught before the
+  // round trip.
+  function bbClearFieldError(id) {
+    // No-op placeholder kept for symmetry with the pattern used on
+    // library.html's add-item field; per-keystroke input intentionally
+    // does nothing here (inline-validation fires on blur only).
+  }
+
+  function bbValidateSchedule(input) {
+    const hint = document.getElementById("schedule-hint");
+    const ok = /^([01]\d|2[0-3]):[0-5]\d$/.test(input.value.trim());
+    hint.textContent = ok
+      ? "Runs once a day at this time, in the timezone below."
+      : 'Not a 24-hour time — use HH:MM, for example 15:00.';
+  }
+
+  function bbValidateCap(input) {
+    const hint = document.getElementById("cap-hint");
+    const max = {{ sink_max_seconds }};
+    let n = parseInt(input.value, 10);
+    if (isNaN(n) || n < 1) {
+      hint.textContent = "Enter a whole number of seconds, at least 1.";
+      return;
+    }
+    const clamped = Math.min(n, max);
+    const headroom = max - clamped;
+    hint.textContent = clamped + " seconds leaves " + headroom + " second(s) of headroom under the "
+      + "hard " + max + "-second cap."
+      + (n > max ? " (" + n + " will be brought back down to " + max + " on save.)" : "");
+  }
+
+  function bbValidateNonNegative(input, hintId, min) {
+    const hint = document.getElementById(hintId);
+    const floor = typeof min === "number" ? min : 0;
+    const n = parseInt(input.value, 10);
+    if (isNaN(n) || n < floor) {
+      hint.dataset.original = hint.dataset.original || hint.textContent;
+      hint.textContent = "Enter a whole number, " + floor + " or higher.";
+    } else if (hint.dataset.original) {
+      hint.textContent = hint.dataset.original;
+    }
+  }
+
+  // destructive-emphasis: Replace deletes data outside the imported
+  // file's scope, so it gets its own confirm on top of the ordinary
+  // submit — even though the server doesn't implement it yet (see
+  // settings.py's NotImplementedError handling), the client-side warning
+  // still describes the real, eventual behaviour rather than nothing.
+  // The "Configure in Advanced" link beside the top-level failure-alert
+  // status (IMPORTANT 2, Task 12 review round 1) opens the Advanced
+  // <details> and scrolls to the notification-service field, rather than
+  // leaving a keyboard/screen-reader user to find and open it themselves.
+  function bbOpenAdvanced() {
+    const details = document.getElementById("settings-advanced");
+    if (details) details.open = true;
+  }
+
+  function bbConfirmImport(form) {
+    if (form.elements["replace"].checked) {
+      return confirm("Replace will delete any library or assignment not present in the imported "
+        + "file. This cannot be undone. Continue?");
+    }
+    return true;
+  }
+</script>
+{% endblock %}

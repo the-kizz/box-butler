@@ -1,0 +1,86 @@
+{# One row in a library's ordered item list (Task 10;
+   design-system/box-butler/pages/library.md).
+
+   dragging-alternative (WCAG 2.2 AA, High) — the single most important
+   rule on this screen: Move up / Move down buttons always render here,
+   regardless of input device or JS. The drag handle beside them is inert
+   markup on its own; library.html's inline script is what wires it to
+   SortableJS, and only when `matchMedia("(pointer:fine)")` matches (a
+   mouse), so a touch/phone visitor never gets a half-working drag layer
+   competing with the buttons for the same taps — buttons are the only
+   thing proven to work there.
+
+   web-target-size — .move-btn inherits the base button's 44px min
+   height/width (static/src/input.css), well over the 24px CSS px floor,
+   and the two buttons sit in separate <form>s with a real gap between
+   them (.move-buttons), not stacked edge-to-edge.
+
+   compact-label-semantics — the state pill below is a <span>, not a
+   button or link: state is derived (OK/unavailable), never something a
+   person sets directly here, and it always pairs an icon-free word with
+   a colour class so colour is never the only signal. #}
+<li class="item-row" data-item-id="{{ item.id }}">
+  <span class="drag-handle" aria-hidden="true">&#8942;&#8942;</span>
+
+  {# item.position is the item's true 0-based position in the whole
+     library (not just this page), so the number shown stays meaningful
+     under pagination — a Jinja `{% include %}`'s `loop` var from the
+     enclosing `{% for %}` isn't reliably visible inside the included
+     template, so this is passed explicitly rather than via `loop.index`. #}
+  <span class="item-position">{{ item.position + 1 }}</span>
+
+  <div class="move-buttons">
+    <form method="post" action="/libraries/{{ library.id }}/items/{{ item.id }}/move" class="move-form">
+      <button type="submit" name="delta" value="-1" class="btn btn-secondary move-btn"
+              aria-label="Move up" {% if item.position == 0 %}disabled{% endif %}>&uarr;</button>
+    </form>
+    <form method="post" action="/libraries/{{ library.id }}/items/{{ item.id }}/move" class="move-form">
+      <button type="submit" name="delta" value="1" class="btn btn-secondary move-btn"
+              aria-label="Move down" {% if item.position == total - 1 %}disabled{% endif %}>&darr;</button>
+    </form>
+  </div>
+
+  <div class="item-main">
+    <p class="item-title">{{ item.title }}</p>
+    <p class="item-meta">
+      {% if item.seconds %}
+      <span class="mono duration">{{ (item.seconds / 60) | round(0, "floor") | int }} min</span>
+      {% else %}
+      <span class="muted">unknown duration</span>
+      {% endif %}
+      <span class="pill pill-{{ item.state.value }}">{{ item.state.value }}</span>
+      {% if item.loudnorm %}<span class="pill pill-loudnorm">loudnorm</span>{% endif %}
+      {% if not item.enabled %}<span class="pill pill-disabled">disabled</span>{% endif %}
+    </p>
+  </div>
+
+  <div class="item-controls">
+    <form method="post" action="/libraries/{{ library.id }}/items/{{ item.id }}/loudnorm" class="loudnorm-form">
+      <label class="toggle-label">
+        <input type="checkbox" name="on" value="1" {% if item.loudnorm %}checked{% endif %}
+               onchange="this.form.requestSubmit()">
+        Loudnorm
+      </label>
+    </form>
+
+    <form method="post" action="/libraries/{{ library.id }}/items/{{ item.id }}/enabled" class="enabled-form">
+      <label class="toggle-label">
+        <input type="checkbox" name="enabled" value="1" {% if item.enabled %}checked{% endif %}
+               onchange="this.form.requestSubmit()">
+        Enabled
+      </label>
+    </form>
+
+    {# confirmation-dialogs — removing an item confirms. A plain
+       `<form method="post">` submit is NOT intercepted by htmx (no
+       hx-post/hx-boost here), so — same lesson as the dashboard's Apply
+       button (Task 9, fix round 1, critical 1) — the guard has to be a
+       real `onclick="return confirm(...)"`, not an inert attribute. #}
+    <form method="post" action="/libraries/{{ library.id }}/items/{{ item.id }}/delete" class="delete-item-form">
+      <button type="submit" class="btn btn-destructive"
+              onclick="return confirm('Remove &quot;{{ item.title }}&quot; from {{ library.name }}? This cannot be undone.');">
+        Remove
+      </button>
+    </form>
+  </div>
+</li>

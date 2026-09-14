@@ -1,0 +1,46 @@
+# Box Butler — example docker-compose service (spec §8.1).
+#
+# This is a NEUTRAL, PORTABLE example meant for anyone self-hosting Box
+# Butler — it must never carry one operator's private infrastructure
+# layout (their reverse-proxy network, their host paths, their auto-update
+# policy). Copy this into your own compose file and adjust the paths,
+# ports and env file location to your own setup.
+#
+# Pulls a published, version-pinned image from GHCR - never `:latest`.
+# An unattended `docker compose pull` against a floating tag can change
+# the running version with no warning, and a surprise upgrade at the
+# wrong moment is a real cost for a service a child's bedtime depends on.
+# Pick your version from the package's release list and update the tag
+# below deliberately when you want to upgrade.
+
+services:
+  box-butler:
+    image: ghcr.io/the-kizz/box-butler:0.1.0
+    # image: ghcr.io/the-kizz/box-butler:0.1      # track the latest 0.1.x patch instead of pinning exactly
+    container_name: box-butler
+    restart: unless-stopped
+    ports:
+      - "8410:8410"
+    environment:
+      # Box Butler falls back to this if `timezone` isn't set in config.yml.
+      # Set it to your own zone - never leave this at UTC (see
+      # config.example.yml for why a UTC rotation window is dangerous).
+      - TZ=${TZ:-UTC}
+      # Bind-mounted /data and /cache are chowned to this uid/gid on
+      # startup, and the app itself then runs as this uid/gid (see
+      # docker-entrypoint.sh), so an existing host directory with
+      # different ownership doesn't break on first write. Set these to
+      # match your host user if you want files created by Box Butler to
+      # be writable by that user outside the container.
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+    env_file: .env                  # copy compose/box-butler.env.example -> .env and fill it in; never commit it
+    volumes:
+      - ./data:/data                 # SQLite store + snapshots
+      - ./cache:/cache               # fetched/rendered audio - large, safe to exclude from backups
+      - /path/to/media:/media:ro     # optional: folder-backed libraries, read-only, never written
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8410/healthz')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

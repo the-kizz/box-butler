@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% from "partials/_icons.html" import icon %}
+
+{% block content %}
+<h1 class="page-title">Runs</h1>
+
+{% if not rows %}
+<div class="empty-state">
+  <p>No runs yet.</p>
+  <p><a href="/">Go to the dashboard</a> and run a tonie to see it here.</p>
+</div>
+{% else %}
+<table class="runs-table">
+  <caption class="sr-only">Run history, newest first</caption>
+  <thead>
+    <tr>
+      <th scope="col">Run</th>
+      <th scope="col">Trigger</th>
+      <th scope="col">Mode</th>
+      <th scope="col">Outcome</th>
+      <th scope="col">Tonies touched</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      <td>
+        <a class="mono" href="/runs/{{ row.run.id }}">{{ row.run.id[:8] }}</a><br>
+        <span class="mono muted">{{ row.started_display }}</span>
+      </td>
+      <td title="{{ row.run.trigger }}">{{ row.trigger_label }}</td>
+      <td><span class="pill {{ 'pill-dryrun' if row.run.dry_run else 'pill-ok' }}">
+        {{ "dry run" if row.run.dry_run else "apply" }}</span></td>
+      <td>
+        <span class="status {{ row.outcome.css_class }}" title="{{ row.outcome.raw or '' }}">
+          {{ icon(row.outcome.icon) }} {{ row.outcome.label }}
+        </span>
+      </td>
+      <td class="mono">{{ row.assignment_count }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

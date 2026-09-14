@@ -1,0 +1,89 @@
+name: Release
+
+# A pushed version tag (v1.2.3) publishes a multi-arch image to GHCR.
+# The push is gated on the test job passing (see `needs: test` on the
+# `build-and-push` job) - a release that ships a red build is worse than
+# no release, since the tag becomes permanent and someone will pull it.
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Build the stylesheet
+        # app.css is a Tailwind build artefact and is gitignored, so a fresh
+        # checkout does not have one. The image builds it the same way (see
+        # the Dockerfile's css stage); without this step the suite runs
+        # against a tree the container would never actually ship.
+        run: |
+          mkdir -p .tools
+          curl -fsSL -o .tools/tailwindcss \
+            https://github.com/tailwindlabs/tailwindcss/releases/download/v3.4.13/tailwindcss-linux-x64
+          chmod +x .tools/tailwindcss
+          make css
+
+      - name: Run test suite
+        run: pytest -q
+
+  build-and-push:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Compute image name and version tag
+        id: version
+        # GitHub Actions expressions have no lowercase function, and a GHCR
+        # repository name MUST be lowercase - buildx rejects anything else with
+        # "repository name must be lowercase". An owner with capitals (a fork
+        # owned by `JohnSmith`) would therefore fail at push time, after the tag
+        # is already permanent. Bash's ${VAR,,} is the fix.
+        run: |
+          owner="${{ github.repository_owner }}"
+          echo "image=ghcr.io/${owner,,}/box-butler" >> "$GITHUB_OUTPUT"
+          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push multi-arch image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ steps.version.outputs.image }}:${{ steps.version.outputs.version }}
+            ${{ steps.version.outputs.image }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

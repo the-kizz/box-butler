@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1 class="page-title">History</h1>
+
+<p class="muted">What each tonie has held, and for how long — read from the write-once
+   snapshots and chapter records. This is the answer to "what was on it before?" after
+   a swap has cleared a tonie, so nothing here is ever regenerated or overwritten.</p>
+
+{% if not rows %}
+<div class="empty-state">
+  <p>Nothing held yet.</p>
+  <p>Once a tonie has been swapped at least once, what it held will show up here.
+     <a href="/">Go to the dashboard</a> to run a sync.</p>
+</div>
+{% else %}
+<table class="history-table">
+  <caption class="sr-only">Story history per tonie, sorted by when it started</caption>
+  <thead>
+    <tr>
+      <th scope="col">Held</th>
+      <th scope="col" aria-sort="{{ 'ascending' if sort_dir == 'asc' else 'descending' }}">
+        <a class="sort-link" href="/history?dir={{ 'asc' if sort_dir == 'desc' else 'desc' }}">
+          Since {{ '↑' if sort_dir == 'asc' else '↓' }}
+        </a>
+      </th>
+      <th scope="col">Until</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for h in rows %}
+    <tr>
+      <td class="history-held">{{ h.target_name }} held <strong>{{ h.title }}</strong>
+        for <span class="mono">{{ h.nights }}</span> night{{ "s" if h.nights != 1 else "" }}</td>
+      <td class="mono">{{ h.since_display }}</td>
+      <td class="mono">{{ h.until_display }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<section class="history-snapshots">
+  <h2>Snapshots</h2>
+  <p class="muted">Read-only records of exactly what was on a tonie right before it was
+     cleared. Written once, never regenerated — the only copy of what was destroyed.</p>
+  {% if not snapshots %}
+  <div class="empty-state">
+    <p>No snapshots yet. They appear here the first time a tonie is cleared.</p>
+  </div>
+  {% else %}
+  <ul class="snapshot-list">
+    {% for name in snapshots %}
+    <li><a class="mono" href="/history/snapshots/{{ name }}">{{ name }}</a></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
+{% endblock %}

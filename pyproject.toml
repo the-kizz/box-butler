@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "boxbutler"
+version = "0.1.0"
+description = "Keeps Creative-Tonies loaded with fresh long-form audio, on a schedule."
+license = {text = "MIT"}
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115", "jinja2>=3.1", "uvicorn[standard]>=0.30",
+  "python-multipart>=0.0.9", "argon2-cffi>=23.1", "itsdangerous>=2.2",
+  "pyyaml>=6.0", "tonie-api==0.1.2", "yt-dlp>=2026.8.19", "yt-dlp-ejs>=0.8.0",
+  "prometheus-client>=0.20", "httpx>=0.27",
+]
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "playwright>=1.45"]
+[project.scripts]
+boxbutler = "boxbutler.main:cli_main"
+
+[tool.setuptools.packages.find]
+include = ["boxbutler*"]
+
+[tool.setuptools.package-data]
+boxbutler = ["store/migrations/*.sql"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["ffmpeg: needs real ffmpeg/ffprobe binaries on PATH"]
+addopts = "-m 'not ffmpeg'"

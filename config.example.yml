@@ -1,0 +1,68 @@
+# Box Butler — example configuration (spec §7).
+#
+# Copy this file, edit what you need, and point BOXBUTLER_CONFIG at it
+# (or leave it as /data/config.yml, the conventional container mount).
+#
+# This file holds ONLY non-secret settings. Every credential below is
+# read from an environment variable at process start and is never read
+# from YAML — a value written here for one of them is ignored (and a
+# secret placed here anyway never survives a `git diff`-able review).
+#
+# Required secrets (the process refuses to start without all three):
+#   BOXBUTLER_SINK_USER        - Tonies cloud account email
+#   BOXBUTLER_SINK_PASSWORD    - Tonies cloud account password
+#   BOXBUTLER_SECRET_KEY       - session-signing key; any long random string
+#
+# Optional secrets:
+#   BOXBUTLER_ADMIN_USER       - Box Butler web UI admin username (bootstrap only —
+#                                 leave both admin vars unset to use the setup wizard instead)
+#   BOXBUTLER_ADMIN_PASSWORD   - Box Butler web UI admin password (bootstrap only)
+#   BOXBUTLER_NOTIFY_TOKEN     - bearer token for the ntfy server below, if it needs one
+#
+# Optional overrides (env beats this file for every setting, not just secrets):
+#   BOXBUTLER_DATA_DIR         - where the SQLite store and snapshots live (default /data)
+#   BOXBUTLER_CACHE_DIR        - where fetched/rendered audio is cached (default /cache)
+#   BOXBUTLER_MEDIA_ROOT       - read-only mount for folder-backed libraries (default /media)
+#   BOXBUTLER_CONFIG           - path to this file (default: none; env-only + defaults)
+#   BOXBUTLER_SINK_KIND        - "tonies_cloud" (default) or "fake" (smoke-testing only)
+#   TZ                         - fallback timezone if "timezone" below is unset
+
+app:
+  # The daily rotation window (spec §7). These two are kept together
+  # deliberately — an inconsistent pair here is the most common way to
+  # rotate at the wrong local time.
+  schedule: "15:00"
+  # Never hard-code your own city here for a public example, and never
+  # "Etc/UTC" either (Task 29 review, MAJOR-2): a UTC window boundary
+  # falls at ~10-11am in most operators' own zones, splitting one local
+  # day into two rotation windows -- an evening run can then destroy a
+  # story put on that same morning. Leave this commented out; Box Butler
+  # falls back to TZ, then the host's own zone (boxbutler/config.py,
+  # boxbutler.orchestrator.run.default_timezone_name).
+  # timezone: "Australia/Melbourne"
+
+# Every field below has a working default — see boxbutler/config.py.
+cap_seconds: 5395
+cache_budget_gb: 40
+prefetch_depth: 3
+avoid_duplicates_across_tonies: true
+repeat_cooldown_days: 0
+loudnorm_default: false
+
+notify:
+  # "none" ships with no notifications configured at all — the honest
+  # out-of-the-box default for a public install. Set to "ntfy" and fill
+  # in server/topic below to enable push alerts.
+  kind: "none"
+  server: "https://ntfy.example.org"
+  topic: "boxbutler-alerts"
+  on_failure: true
+  on_success: false
+  on_debug: false
+
+sink:
+  kind: "tonies_cloud"
+
+js_runtime: "node"
+listen_port: 8410
+secure_cookies: false

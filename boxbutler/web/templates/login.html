@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en" data-theme="auto">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ APP_NAME }}</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="login-body">
+  <main class="login-wrap">
+    <h1 class="login-title">{{ APP_NAME }}</h1>
+    <form method="post" action="/login" class="login-form" novalidate>
+      <input type="hidden" name="next" value="{{ next }}">
+
+      <label for="username">Username</label>
+      <input
+        id="username" name="username" type="text"
+        autocomplete="username" autocapitalize="off" autocorrect="off"
+        required>
+
+      <label for="password">Password</label>
+      <div class="password-field">
+        <input
+          id="password" name="password" type="password"
+          autocomplete="current-password" required>
+        <button type="button" class="password-toggle" id="password-toggle"
+                aria-pressed="false" aria-controls="password" aria-label="Show password">
+          <svg class="icon icon-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+          <svg class="icon icon-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden>
+            <path d="M3 3l18 18"/>
+            <path d="M10.6 5.2A10.9 10.9 0 0 1 12 5c6.4 0 10 7 10 7a15.6 15.6 0 0 1-3.4 4.3M6.5 6.6C3.7 8.4 2 12 2 12s3.6 7 10 7a9.9 9.9 0 0 0 3.4-.6"/>
+            <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>
+          </svg>
+        </button>
+      </div>
+
+      {% if error %}
+      <p class="form-error" role="alert" aria-live="assertive">{{ error }}</p>
+      {% else %}
+      <p class="form-error" aria-live="assertive" hidden></p>
+      {% endif %}
+
+      <button type="submit" class="btn btn-primary login-submit">Log in</button>
+    </form>
+  </main>
+  <script>
+    (function () {
+      function setIconHidden(el, hide) {
+        if (hide) {
+          el.setAttribute("hidden", "");
+        } else {
+          el.removeAttribute("hidden");
+        }
+      }
+      var btn = document.getElementById("password-toggle");
+      var input = document.getElementById("password");
+      var eye = btn.querySelector(".icon-eye");
+      var eyeOff = btn.querySelector(".icon-eye-off");
+      btn.addEventListener("click", function () {
+        var showing = input.type === "text";
+        input.type = showing ? "password" : "text";
+        btn.setAttribute("aria-pressed", String(!showing));
+        btn.setAttribute("aria-label", showing ? "Show password" : "Hide password");
+        // Defect fix (Phase 2 polish pass): these are SVG elements, and
+        // SVGElement does not implement the HTMLElement "hidden" IDL
+        // reflection — assigning `.hidden` sets a plain JS property that
+        // never touches the `hidden` content attribute, so both icons
+        // stayed permanently visible. set/removeAttribute works on any
+        // element and is what the `[hidden]` CSS selector matches.
+        setIconHidden(eye, !showing);
+        setIconHidden(eyeOff, showing);
+      });
+    })();
+  </script>
+</body>
+</html>

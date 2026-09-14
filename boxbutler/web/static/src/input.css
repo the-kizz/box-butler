@@ -1,0 +1,917 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+@source "../../templates/**/*.html";
+
+/* Self-hosted fonts only — no CDN (spec §5 / design-system/box-butler/MASTER.md "Type"):
+   this runs on a LAN and must work when the internet is the thing that is broken. */
+@font-face {
+  font-family: "Fira Sans";
+  src: url("/static/fonts/FiraSans-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Fira Sans";
+  src: url("/static/fonts/FiraSans-Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Fira Code";
+  src: url("/static/fonts/FiraCode-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ---------------------------------------------------------------------
+ * Design tokens (design-system/box-butler/MASTER.md "Box Butler project
+ * contract" — authoritative, overrides the plan's inline stone/zinc set).
+ *
+ * MASTER's generated palette is dark-first; its values are used as the
+ * DARK set below, and the light set is derived from the same roles.
+ * Light is defined on bare :root (never only inside a media query), then
+ * overridden for dark under prefers-color-scheme (guarded so an explicit
+ * data-theme="light" wins) and again under [data-theme="dark"] so an
+ * explicit toggle wins in both directions.
+ * ------------------------------------------------------------------- */
+:root {
+  /* light (derived from MASTER's roles) */
+  --bg: #f8fafc;
+  --fg: #0f172a;
+  --muted: #475569;
+  --line: #e2e8f0;
+  --card: #ffffff;
+  --card-fg: #0f172a;
+  --accent: #15803d;       /* CTA green, darkened for 4.5:1 on light bg */
+  --on-accent: #ffffff;
+  --focus: #1d4ed8;
+  --destructive: #b91c1c;
+  --on-destructive: #ffffff;
+
+  /* status colours — the only strong hue on the surface (spec §5) */
+  --ok: #15803d;
+  --warn: #b45309;
+  --bad: #b91c1c;
+
+  --font-body: "Fira Sans", system-ui, sans-serif;
+  --font-mono: "Fira Code", ui-monospace, "SFMono-Regular", monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f172a;
+    --fg: #f8fafc;
+    --muted: #94a3b8;
+    --line: #475569;
+    --card: #1b2336;
+    --card-fg: #f8fafc;
+    --accent: #22c55e;
+    --on-accent: #0f172a;
+    --focus: #93c5fd;
+    --destructive: #ef4444;
+    --on-destructive: #0f172a;
+
+    --ok: #4ade80;
+    --warn: #fbbf24;
+    --bad: #f87171;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0f172a;
+  --fg: #f8fafc;
+  --muted: #94a3b8;
+  --line: #475569;
+  --card: #1b2336;
+  --card-fg: #f8fafc;
+  --accent: #22c55e;
+  --on-accent: #0f172a;
+  --focus: #93c5fd;
+  --destructive: #ef4444;
+  --on-destructive: #0f172a;
+
+  --ok: #4ade80;
+  --warn: #fbbf24;
+  --bad: #f87171;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: 16px;
+  margin: 0;
+}
+
+.mono,
+.duration,
+.byte-count,
+.log-line,
+code {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.wrap {
+  padding-block: 1rem;
+  padding-inline: 16px;
+  max-width: 64rem;
+  margin-inline: auto;
+}
+
+a { color: var(--accent); }
+
+/* 44px touch targets (spec §5 / MASTER "Interaction") */
+button, .btn, a.btn, input, select, textarea {
+  min-height: 44px;
+  font-size: 16px;
+  font-family: inherit;
+}
+
+button, .btn, a.btn {
+  cursor: pointer;
+  min-width: 44px;
+  border-radius: 8px;
+  padding: 0 1rem;
+  font-weight: 500;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--fg);
+  transition: background-color 200ms ease, transform 150ms ease;
+}
+@media (prefers-reduced-motion: no-preference) {
+  button:hover, .btn:hover, a.btn:hover { transform: translateY(-1px); }
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: var(--accent);
+}
+.btn-secondary {
+  background: transparent;
+  color: var(--fg);
+  border: 2px solid var(--line);
+}
+.btn-destructive {
+  background: var(--destructive);
+  color: var(--on-destructive);
+  border-color: var(--destructive);
+}
+
+input, select, textarea {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 0.75rem;
+  background: var(--card);
+  color: var(--fg);
+}
+
+label {
+  display: block;
+  font-weight: 500;
+  margin-block: 0.75rem 0.25rem;
+}
+
+/* Visible focus rings on everything interactive — never removed (spec §5). */
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* Status semantics — colour is never the only signal; templates pair
+   these classes with an icon and a word (MASTER "Status semantics"). */
+.state-OK { color: var(--ok); }
+.state-DEGRADED { color: var(--bad); font-weight: 600; }
+.state-UNMANAGED { color: var(--muted); }
+
+/* Top nav (base.html) */
+.topnav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+  padding-inline: 16px;
+  padding-block: 0.5rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--card);
+}
+.topnav .brand { font-weight: 600; text-decoration: none; color: var(--fg); }
+.topnav a { text-decoration: none; color: var(--fg); padding: 0.5rem 0; }
+.topnav .logout-form { margin-inline-start: auto; }
+
+/* Login screen — minimal, centered, no nav (design-system/box-butler/pages/login.md) */
+.login-body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  margin: 0;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.login-wrap {
+  width: min(92vw, 24rem);
+  padding: 1.5rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--card-fg);
+}
+.login-title { font-size: 1.25rem; margin: 0 0 1rem; text-align: center; }
+.login-form input { width: 100%; }
+.password-field { position: relative; display: flex; align-items: center; }
+.password-field input { flex: 1; padding-inline-end: 3rem; }
+.password-toggle {
+  position: absolute;
+  right: 4px;
+  background: transparent;
+  border: none;
+  min-width: 44px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+.icon { width: 22px; height: 22px; }
+/* Defect fix (Phase 2 polish pass): Chromium (and some other engines)
+   do not apply the UA `[hidden] { display: none }` rule to inline SVG
+   the way they do to ordinary HTML elements, so the password
+   show/hide toggle's two icons (login.html, setup.html) rendered side
+   by side even though exactly one of them carried the `hidden`
+   attribute at any time. This makes `hidden` actually take effect on
+   icons without touching the toggle's JS, which already sets/clears
+   the attribute correctly. */
+.icon[hidden] { display: none; }
+.form-error {
+  color: var(--bad);
+  font-weight: 500;
+  min-height: 1.25rem;
+  margin: 0.5rem 0 0;
+}
+.login-submit { width: 100%; margin-top: 1rem; }
+
+/* Dashboard (Task 9; design-system/box-butler/pages/dashboard.md) */
+.page-title { margin-block: 1rem 0.5rem; }
+
+/* Visually hidden but still announced — the single live region
+   (#contextual-live-badge-updates) is never meant to be seen, only heard;
+   cards must not each be their own competing live region. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* DEGRADED outranks everything on this screen (spec §5 / dashboard.md
+   "Hierarchy") — a full-width destructive banner above the grid, not
+   just a card border. */
+.degraded-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-block: 0.5rem 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  background: var(--destructive);
+  color: var(--on-destructive);
+  font-weight: 600;
+}
+.degraded-banner .icon { flex-shrink: 0; }
+
+.empty-state {
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  padding: 2rem 1.5rem;
+  text-align: center;
+  color: var(--muted);
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1rem;
+  margin-block: 1rem;
+  /* Fix round 1, minor 5: default grid stretch made every card in a row
+     match the tallest one, so a short card (e.g. Unmanaged) sat beside the
+     DEGRADED card with a large empty gap at the bottom — technically equal
+     height, but visually ragged. align-items:start lets each card take
+     only the height its own content needs. */
+  align-items: start;
+}
+
+.card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--card-fg);
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+/* DEGRADED gets the destructive colour as a visible border too, on top of
+   the icon+word — colour is never the *only* signal, but it still helps. */
+.card-degraded {
+  border-color: var(--destructive);
+  border-width: 2px;
+  box-shadow: 0 0 0 1px var(--destructive);
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.card-title { margin: 0; font-size: 1.1rem; }
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  font-weight: 600;
+}
+.status-OK { color: var(--ok); }
+.status-DEGRADED { color: var(--bad); }
+.status-UNMANAGED { color: var(--muted); font-weight: 500; }
+/* "Tonie untouched" outcomes (PLAN_FAILED, ABORTED_STAGING) — amber, a
+   deliberately distinct treatment from DEGRADED's red: staging failing
+   before `clear` leaves the tonie exactly as it was, which is a lower-
+   urgency event than DEGRADED's "may be empty at bedtime" (Task 11
+   review round 1, Important 1). Colour is still never the only signal —
+   templates always pair this class with a circle-dashed icon and a
+   "tonie untouched" label, never the warning icon. */
+.status-UNTOUCHED { color: var(--warn); font-weight: 600; }
+/* PAUSED (final coherence review, Critical-2): `assignment.enabled` is
+   False, so the orchestrator skips this tonie on every run. Not broken
+   (never DEGRADED's red) and not "being kept fresh" (never OK's green)
+   — the same amber as UNTOUCHED above, for the same reason: a real but
+   lower-urgency state than DEGRADED, still never colour-only (always
+   paired with the pause-circle icon and the word "Paused"). */
+.status-PAUSED { color: var(--warn); font-weight: 600; }
+
+.degraded-explain { color: var(--bad); margin: 0; }
+.paused-explain { color: var(--warn); margin: 0; }
+
+.card-body { display: flex; flex-direction: column; gap: 0.5rem; }
+.on-it-now, .up-next, .last-synced { margin: 0; }
+.up-next { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; }
+.muted { color: var(--muted); }
+
+.pin-form, .run-form, .repair-form, .assign-form, .enabled-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+.pin-form select, .assign-form select { flex: 1; min-width: 10rem; }
+.pin-form .icon { flex-shrink: 0; }
+
+/* DEGRADED: Repair is the primary action; ordinary Run now is demoted into
+   a closed-by-default disclosure so it doesn't compete for attention
+   (fix round 1, minor 4). Still fully present in the DOM/markup either way. */
+.run-now-collapsed {
+  margin-top: 0.25rem;
+}
+.run-now-collapsed summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-weight: 500;
+  padding: 0.5rem 0;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+.run-now-collapsed .run-form { margin-top: 0.5rem; }
+
+/* Reduced motion still lets the spin icon communicate "in progress" via
+   the icon + word pairing alone, so removing the animation loses no
+   information (spec §5 / MASTER "prefers-reduced-motion respected"). */
+@media (prefers-reduced-motion: no-preference) {
+  .icon-spin { animation: bb-spin 1.1s linear infinite; }
+}
+@keyframes bb-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* --------------------------------------------------------------------
+ * Library screen (Task 10; design-system/box-butler/pages/library.md)
+ * ------------------------------------------------------------------ */
+
+.library-list {
+  list-style: none;
+  margin: 1rem 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.library-list-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+}
+.library-link { font-weight: 600; }
+
+.create-library, .add-item, .delete-library {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 1rem;
+  margin-block: 1.5rem;
+  background: var(--card);
+}
+.delete-library { border-color: var(--destructive); }
+.delete-library h2 { color: var(--bad); margin-top: 0; }
+.create-library-form, .add-item-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.create-library-form input, .create-library-form select,
+.add-item-form input { max-width: 32rem; }
+.create-library-form button, .add-item-form button { align-self: flex-start; margin-top: 0.5rem; }
+
+.field-hint {
+  display: block;
+  min-height: 1.25rem;
+  margin-top: 0.15rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.delete-library-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+.delete-library-form input { max-width: 20rem; }
+
+/* Mode is shown/changeable right at the top of the screen — "order is
+   meaning" (library.md) means the consequence of reordering has to be
+   legible before anyone touches an item. */
+.mode-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-block: 0.5rem;
+}
+.mode-form select { min-width: 16rem; flex: 1; }
+
+.scan-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-block: 0.5rem;
+}
+
+.item-count { color: var(--muted); margin-block: 0.5rem; }
+
+.item-list {
+  list-style: none;
+  margin: 0.5rem 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* Item row: drag handle · position · move buttons · title/meta · controls.
+   Grid rather than flex so the same columns line up down a long list —
+   readable scanning matters when order is the thing being communicated. */
+.item-row {
+  display: grid;
+  grid-template-columns: auto auto auto 1fr auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+}
+@media (max-width: 640px) {
+  .item-row {
+    grid-template-columns: auto auto 1fr;
+    grid-template-areas:
+      "handle position controls"
+      "move   main     main";
+  }
+  .item-row .drag-handle { grid-area: handle; }
+  .item-row .item-position { grid-area: position; }
+  .item-row .move-buttons { grid-area: move; }
+  .item-row .item-main { grid-area: main; }
+  .item-row .item-controls { grid-area: controls; }
+}
+
+/* Decorative only — never the only way to reorder (dragging-alternative,
+   WCAG 2.2 AA, High). Hidden entirely on a touch/phone viewport since
+   library.html's script only wires up SortableJS for pointer:fine, and a
+   visible-but-inert handle would be confusing there. */
+.drag-handle {
+  font-size: 1.25rem;
+  line-height: 1;
+  color: var(--muted);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+@media (pointer: coarse) {
+  .drag-handle { visibility: hidden; }
+}
+
+.item-position {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  min-width: 1.5em;
+  text-align: right;
+}
+
+/* web-target-size (High): each move button is a full 44px button (the
+   global button rule already guarantees >= 24px CSS px), and the two
+   buttons sit in a column with a real gap — never crammed edge to edge. */
+.move-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.move-form { margin: 0; }
+.move-btn {
+  padding: 0;
+  line-height: 1;
+  font-size: 1.1rem;
+}
+.move-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.item-main { min-width: 0; }
+.item-title {
+  margin: 0 0 0.25rem;
+  overflow-wrap: anywhere;
+}
+.item-meta {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--muted);
+}
+
+/* compact-label-semantics: state pills are static markup, always an
+   icon-free *word* paired with colour — never colour alone. */
+.pill {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border: 1px solid var(--line);
+}
+.pill-ok { color: var(--ok); border-color: var(--ok); }
+.pill-unavailable { color: var(--bad); border-color: var(--bad); }
+.pill-loudnorm { color: var(--fg); }
+.pill-disabled { color: var(--muted); }
+/* Runs screen — a dry run is neutral information, not a loudnorm toggle;
+   a distinct name so nobody mistakes the two in six months' time (Task 11
+   review round 1, Minor 3). Same visual weight as pill-loudnorm. */
+.pill-dryrun { color: var(--fg); }
+
+.item-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+.item-controls form { margin: 0; }
+.toggle-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 500;
+  min-height: 44px;
+}
+.toggle-label input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  min-height: 0;
+}
+
+.pagination {
+  display: flex;
+  justify-content: space-between;
+  margin-block: 1rem;
+}
+
+/* --------------------------------------------------------------------
+ * History and Runs screens (Task 11;
+ * design-system/box-butler/pages/history.md, MASTER.md)
+ * ------------------------------------------------------------------ */
+
+/* sortable-table: an ordinary HTML table, full width on desktop, that
+   scrolls horizontally in its own box rather than the whole page
+   (responsive rule — only tables/diagrams/code may overflow, never the
+   page body). */
+.history-table, .runs-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-block: 1rem;
+  display: block;
+  overflow-x: auto;
+}
+.history-table thead, .runs-table thead { display: table-header-group; }
+.history-table tbody, .runs-table tbody { display: table-row-group; }
+.history-table tr, .runs-table tr { display: table-row; }
+.history-table th, .history-table td,
+.runs-table th, .runs-table td {
+  display: table-cell;
+  text-align: left;
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+.history-table th, .runs-table th {
+  font-weight: 600;
+  color: var(--muted);
+}
+
+/* truncation-strategy: long story titles wrap, they are never clipped
+   with an ellipsis — the full title is always in the DOM and on screen. */
+.history-held {
+  overflow-wrap: anywhere;
+  max-width: 32rem;
+}
+
+.sort-link {
+  color: inherit;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.sort-link:hover { text-decoration: underline; }
+
+.history-snapshots {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 1rem;
+  margin-block: 1.5rem;
+  background: var(--card);
+}
+.snapshot-list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.log-block {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  overflow-x: auto;
+  white-space: pre;
+  margin-block: 0.5rem 1.5rem;
+}
+
+.run-outcome { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; }
+
+/* Raw enum value (run.outcome / run.trigger) is deliberately NOT shown
+   in visible text — MASTER.md's copy contract is plain language, no
+   jargon, and "Degraded — may be empty at bedtime" next to a bare
+   "DEGRADED" would put the jargon right back (Task 11 review round 2).
+   It survives only as a title= tooltip on the .status span (see
+   runs.html / run_detail.html) for anyone debugging against the DB. */
+
+/* --------------------------------------------------------------------
+ * Settings screen (Task 12; design-system/box-butler/pages/settings.md)
+ * ------------------------------------------------------------------ */
+
+/* submit-feedback / success-feedback */
+.settings-saved {
+  color: var(--ok);
+  font-weight: 600;
+  border: 1px solid var(--ok);
+  border-radius: 8px;
+  padding: 0.6rem 1rem;
+  margin-block: 0.5rem 1rem;
+}
+
+/* error-clarity */
+.settings-errors {
+  border: 1px solid var(--bad);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin-block: 0.5rem 1rem;
+  color: var(--bad);
+}
+.settings-errors-title { margin: 0 0 0.35rem; font-weight: 600; }
+.settings-errors ul { margin: 0; padding-inline-start: 1.25rem; }
+
+.settings-form { display: flex; flex-direction: column; gap: 0.5rem; max-width: 40rem; }
+.settings-section {
+  border: 1px solid var(--line);
+  background: var(--card);
+  border-radius: 12px;
+  padding: 1rem;
+  margin-block: 0.75rem;
+}
+.settings-section h2 { margin-top: 0; }
+.settings-primary { border-width: 2px; }
+.settings-section input[type="text"],
+.settings-section input[type="number"],
+.settings-section select {
+  width: 100%;
+  max-width: 24rem;
+}
+
+/* progressive-disclosure: Advanced starts collapsed; opening it is a
+   deliberate act, never required to get a working install. Defect fix
+   (Phase 2 polish pass): bare bold text gave no hint the block was
+   interactive. A rotating caret (SVG, partials/_icons.html — no
+   Unicode/emoji glyphs per MASTER.md) plus a one-line summary of what
+   is inside make the disclosure legible as a disclosure. Native
+   marker (the browser's own triangle/dot) is suppressed so it doesn't
+   duplicate the caret. */
+.settings-advanced summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 0.5rem 0;
+  min-height: 44px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  list-style: none;
+}
+.settings-advanced summary::-webkit-details-marker,
+.settings-advanced summary::marker {
+  display: none;
+  content: "";
+}
+.settings-advanced-summary-main {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.settings-advanced-chevron {
+  flex-shrink: 0;
+  transition: transform 0.15s;
+}
+.settings-advanced[open] .settings-advanced-chevron { transform: rotate(90deg); }
+.settings-advanced summary:hover .settings-advanced-label,
+.settings-advanced summary:focus-visible .settings-advanced-label {
+  color: var(--accent);
+}
+.settings-advanced-hint { font-weight: 500; }
+.settings-advanced[open] summary { margin-bottom: 0.25rem; }
+
+.settings-token-label { margin-top: 0.75rem; }
+.settings-token-note code { font-family: var(--font-mono); }
+
+.settings-save { margin-top: 0.5rem; align-self: flex-start; }
+
+/* destructive-emphasis: export/import gets its own bordered section,
+   same treatment as library.html's delete-library block, visually
+   distinct from the ordinary settings form above it. */
+.settings-export-import {
+  border: 1px solid var(--destructive);
+  border-radius: 12px;
+  padding: 1rem;
+  margin-block: 1.5rem;
+}
+.settings-export-import h2 { color: var(--bad); margin-top: 0; }
+.settings-import-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  max-width: 24rem;
+}
+.settings-replace-toggle { color: var(--bad); }
+
+/* IMPORTANT 2 (Task 12 review round 1): the failure-alert status line
+   sits at the top level, next to schedule/timezone, not inside Advanced
+   — whether a parent will be told a tonie may be empty at bedtime is not
+   an Advanced-only detail. */
+.settings-alerts-status .settings-alert-line { margin: 0; }
+.settings-alerts-status a { margin-inline-start: 0.5rem; }
+
+/* IMPORTANT 1 (Task 12 review round 1): inline note next to the
+   notification checkboxes when no channel is configured, so a checked
+   "Notify on failure" is never silently inert. */
+.settings-notify-none-note { color: var(--warn); font-weight: 500; }
+
+/* Task 36 — first-run setup wizard. Standalone page (like login.html),
+   not base.html: there is no logged-in nav to show yet. */
+.setup-body {
+  display: flex;
+  justify-content: center;
+  min-height: 100dvh;
+  margin: 0;
+  padding-block: 2rem;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+}
+.setup-wrap {
+  width: min(92vw, 34rem);
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--card-fg);
+  border-radius: 12px;
+  padding: 1.5rem;
+  align-self: flex-start;
+}
+.setup-title { margin: 0 0 0.25rem; font-size: 1.25rem; }
+.setup-subtitle { margin: 0 0 1rem; color: var(--muted); }
+
+/* Step indicator — text + state, never colour alone (MASTER's status
+   semantics rule applies here too: current vs. done vs. upcoming must
+   read correctly without colour). */
+.setup-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  list-style: none;
+  margin: 0 0 1.25rem;
+  padding: 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+.setup-step-current { color: var(--fg); font-weight: 600; }
+.setup-step-done { color: var(--fg); }
+/* SVG check-circle icon (partials/_icons.html), not a "✓" glyph —
+   MASTER.md: SVG icons only, no emoji/glyph icons. */
+.setup-step-icon {
+  width: 1rem;
+  height: 1rem;
+  vertical-align: -0.15em;
+  margin-inline-end: 0.2rem;
+  color: var(--ok);
+}
+
+.setup-intro { margin: 0 0 0.75rem; }
+.setup-form input[type="text"],
+.setup-form input[type="password"] { width: 100%; }
+.setup-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+.setup-actions .btn-primary { margin-inline-start: auto; }
+
+.setup-targets {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin: 0.75rem 0;
+}
+.setup-targets legend { font-weight: 600; padding: 0 0.25rem; }
+.setup-target { display: flex; }
+
+.setup-admin {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 1rem;
+  margin-block: 1rem;
+}
+.setup-admin h2 { margin-top: 0; }

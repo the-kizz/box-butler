@@ -1,0 +1,38 @@
+# Personal content and state - this repo goes public.
+# Never commit the operator's libraries, tonie contents, or any credential.
+snapshots/
+config.yml
+config.yaml
+.env
+*.env
+!config.example.yml
+
+# Cached audio never belongs in git
+*.m4a
+*.mp3
+*.opus
+*.webm
+cache/
+
+# Python
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+*.egg-info/
+
+# Web static assets
+boxbutler/web/static/app.css
+
+# Tailwind standalone CLI binary (fetched by hand / Makefile, not committed)
+.tools/
+
+# Test fixtures (audio files)
+tests/fixtures/audio/*.m4a
+
+# ui-ux-pro-max working artefacts: the design contract the screens were built
+# against. Kept on disk and in the archive, never shipped — it is a build
+# input, not part of the product. Ignored because `git add -A` re-staged it
+# three times after it had been deliberately removed from the index.
+design-system/

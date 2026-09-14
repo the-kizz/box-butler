@@ -1,0 +1,166 @@
+{% from "partials/_icons.html" import icon %}
+<article class="card state-{{ card.status }}{% if card.status == 'DEGRADED' %} card-degraded{% endif %}">
+  <header class="card-header">
+    <h2 class="card-title">{{ card.assignment.target_name }}</h2>
+
+    {% if card.status == "OK" %}
+    <p class="status status-OK">{{ icon("check-circle") }} <span>OK</span></p>
+    {% elif card.status == "DEGRADED" %}
+    <p class="status status-DEGRADED">{{ icon("warning") }} <span>DEGRADED</span></p>
+    {% elif card.status == "PAUSED" %}
+    <p class="status status-PAUSED">{{ icon("pause-circle") }} <span>Paused</span></p>
+    {% else %}
+    <p class="status status-UNMANAGED">{{ icon("circle-dashed") }} <span>Unmanaged — no library assigned</span></p>
+    {% endif %}
+  </header>
+
+  {% if card.status == "DEGRADED" %}
+  <p class="degraded-explain">This tonie may be empty at bedtime — the last upload did not finish.</p>
+  {% elif card.status == "PAUSED" %}
+  <p class="paused-explain">Rotation is paused — nothing will be loaded onto this tonie until you resume it.</p>
+  {% endif %}
+
+  {% if card.library %}
+  <section class="card-body">
+    <p class="on-it-now">
+      <strong>What's on it now:</strong>
+      {% if card.chapter_titles %}
+        {{ card.chapter_titles | join(", ") }}
+        &mdash;
+        <span class="mono duration">{{ card.total_minutes }} min</span>
+      {% else %}
+        <span class="muted">Nothing loaded.</span>
+      {% endif %}
+    </p>
+
+    <p class="up-next">
+      {{ icon("clock") }}
+      <strong>Up next:</strong>
+      {% if card.up_next %}
+        {{ card.up_next.title }}
+      {% elif card.plan_reason == "PINNED" %}
+        pinned item stays
+      {% elif card.plan_reason == "EMPTY_LIBRARY" %}
+        <span class="muted">library is empty</span>
+      {% elif card.plan_reason == "NO_CANDIDATE" %}
+        <span class="muted">no eligible item</span>
+      {% else %}
+        <span class="muted">—</span>
+      {% endif %}
+    </p>
+
+    <p class="last-synced">
+      {% if card.assignment.last_success_at %}
+        Last synced: <span class="mono">{{ card.assignment.last_success_at.strftime("%Y-%m-%d %H:%M UTC") }}</span>
+        {% if card.stale %}<span class="state-DEGRADED">(Stale)</span>{% endif %}
+      {% else %}
+        <span class="state-DEGRADED">Stale — never synced</span>
+      {% endif %}
+    </p>
+
+    {# One row: sr-only label keeps an accessible name without the global
+       block-level <label> forcing its own line (fix round 1, minor 5). #}
+    <form method="post" action="/assignments/{{ card.assignment.id }}/pin" class="pin-form">
+      <label class="sr-only" for="pin-{{ card.assignment.id }}">Pin an item on {{ card.assignment.target_name }}</label>
+      {{ icon("push-pin") }}
+      <select id="pin-{{ card.assignment.id }}" name="item_id">
+        <option value="">No pin</option>
+        {% for it in card.pin_options %}
+        <option value="{{ it.id }}" {% if card.assignment.pinned_item_id == it.id %}selected{% endif %}>{{ it.title }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="btn btn-secondary">Set pin</button>
+    </form>
+
+    {# Final coherence review, Major-3: `POST /assignments/{id}/enabled` was
+       fully wired and orchestrator-effective (run.py:500 skips a disabled
+       assignment) but had no UI control at all -- only tests exercised it.
+       Same checkbox-plus-immediate-submit pattern as the item-level
+       "Enabled" toggle in partials/item_row.html, so it needs no confirm
+       dialog: it is reversible in one click, not destructive, and matches
+       an idiom already established elsewhere in this UI rather than
+       inventing a new one. #}
+    <form method="post" action="/assignments/{{ card.assignment.id }}/enabled" class="enabled-form">
+      <label class="toggle-label">
+        <input type="checkbox" name="enabled" value="1" {% if card.assignment.enabled %}checked{% endif %}
+               onchange="this.form.requestSubmit()">
+        {% if card.assignment.enabled %}Rotating{% else %}Paused{% endif %}
+      </label>
+    </form>
+
+    {# Fix round 1, critical 1: hx-confirm was inert on a plain <form method="post">
+       submit — htmx only intercepts elements it manages (hx-get/post/.../hx-boost),
+       and neither was present, so the browser submitted natively with no dialog.
+       Chosen fix: a plain onclick="return confirm(...)" on the Apply/Repair-apply
+       buttons. This is the "plain-JS route" the review offered, picked over
+       hx-post+hx-target/hx-boost because Run now and Repair are real full-page
+       navigations to /runs/{run_id} (per this task's own route contract) — wiring
+       htmx to manage that submission would mean either re-navigating the whole
+       page via hx-boost (extra surface for no benefit) or intercepting it into an
+       AJAX partial swap (Task 11's job, not this one). onclick returning false
+       prevents the button's default submit action with zero extra dependencies,
+       works identically with JS-disabled htmx already loaded or not, and needs no
+       change to the redirect-based route handlers. Dry run never gets this
+       attribute — it cannot destroy anything, so it must not ask. #}
+    {% if card.status == "DEGRADED" %}
+    <form method="post" action="/assignments/{{ card.assignment.id }}/repair" class="repair-form">
+      <button type="submit" class="btn btn-primary" name="mode" value="dry_run">
+        {{ icon("arrows-clockwise") }} Repair (dry run)
+      </button>
+      <button type="submit"
+              onclick="return confirm('Repair {{ card.assignment.target_name }} now? This clears the tonie after staging succeeds.');"
+              class="btn btn-destructive"
+              name="mode" value="apply">
+        Repair
+      </button>
+    </form>
+
+    {# Fix round 1, minor 4: DEGRADED's job is to communicate urgency and get the
+       operator to Repair, not to offer four equally-weighted buttons. Repair is
+       now the card's primary action (above, always visible); the ordinary
+       Run now pair is demoted into a closed <details> so it's still fully present
+       in the page (every assertion about it still holds) but not competing for
+       attention by default. #}
+    <details class="run-now-collapsed">
+      <summary>Run now anyway (skips repair)</summary>
+      <form method="post" action="/assignments/{{ card.assignment.id }}/run" class="run-form">
+        <button type="submit" class="btn btn-primary" name="mode" value="dry_run">
+          {{ icon("play") }} Dry run
+        </button>
+        <button type="submit"
+                onclick="return confirm('Apply to {{ card.assignment.target_name }}? This clears the tonie after staging succeeds.');"
+                class="btn btn-secondary"
+                name="mode" value="apply">
+          Apply
+        </button>
+      </form>
+    </details>
+    {% else %}
+    <form method="post" action="/assignments/{{ card.assignment.id }}/run" class="run-form">
+      <button type="submit" class="btn btn-primary" name="mode" value="dry_run">
+        {{ icon("play") }} Dry run
+      </button>
+      <button type="submit"
+              onclick="return confirm('Apply to {{ card.assignment.target_name }}? This clears the tonie after staging succeeds.');"
+              class="btn btn-secondary"
+              name="mode" value="apply">
+        Apply
+      </button>
+    </form>
+    {% endif %}
+  </section>
+  {% else %}
+  <section class="card-body">
+    <form method="post" action="/assignments/{{ card.assignment.id }}/library" class="assign-form">
+      <label for="assign-{{ card.assignment.id }}">Assign a library</label>
+      <select id="assign-{{ card.assignment.id }}" name="library_id" required>
+        <option value="" disabled selected>Choose a library&hellip;</option>
+        {% for lib in card.libraries %}
+        <option value="{{ lib.id }}">{{ lib.name }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="btn btn-primary">Assign</button>
+    </form>
+  </section>
+  {% endif %}
+</article>

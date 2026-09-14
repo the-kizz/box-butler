@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en" data-theme="auto">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ APP_NAME }} — Setup</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+{% from "partials/_icons.html" import icon %}
+<body class="setup-body">
+  <main class="setup-wrap">
+    <h1 class="setup-title">{{ APP_NAME }} setup</h1>
+    <p class="setup-subtitle">Three steps, no config file to write.</p>
+
+    {# MASTER.md: SVG icons only, never a bare glyph/emoji — the done
+       marker is the shared check-circle icon, not a "✓" character. #}
+    <ol class="setup-steps" aria-label="Setup steps">
+      <li class="setup-step {% if step == 1 %}setup-step-current{% elif step > 1 %}setup-step-done{% endif %}"
+          {% if step == 1 %}aria-current="step"{% endif %}>
+        {% if step > 1 %}{{ icon("check-circle", "setup-step-icon") }}{% endif %}1. Tonie account</li>
+      <li class="setup-step {% if step == 2 %}setup-step-current{% elif step > 2 %}setup-step-done{% endif %}"
+          {% if step == 2 %}aria-current="step"{% endif %}>
+        {% if step > 2 %}{{ icon("check-circle", "setup-step-icon") }}{% endif %}2. Library and source</li>
+      <li class="setup-step {% if step == 3 %}setup-step-current{% endif %}"
+          {% if step == 3 %}aria-current="step"{% endif %}>3. Choose tonies</li>
+    </ol>
+
+    {% if error %}
+    <p class="form-error" role="alert" aria-live="assertive">{{ error }}</p>
+    {% else %}
+    <p class="form-error" aria-live="assertive" hidden></p>
+    {% endif %}
+
+    {% if step == 1 %}
+    <form method="post" action="/setup" class="setup-form" novalidate>
+      <input type="hidden" name="step" value="1">
+      <p class="setup-intro">Sign in with the tonie account whose tonies Box Butler should manage.</p>
+
+      <label for="tonie_username">Tonie account email</label>
+      <input id="tonie_username" name="tonie_username" type="text" inputmode="email"
+             autocomplete="username" autocapitalize="off" autocorrect="off"
+             value="{{ tonie_username }}" required>
+
+      <label for="tonie_password">Tonie account password</label>
+      <div class="password-field">
+        <input id="tonie_password" name="tonie_password" type="password"
+               autocomplete="current-password" required>
+        <button type="button" class="password-toggle" data-toggle-for="tonie_password"
+                aria-pressed="false" aria-controls="tonie_password" aria-label="Show password">
+          <svg class="icon icon-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+          <svg class="icon icon-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden>
+            <path d="M3 3l18 18"/>
+            <path d="M10.6 5.2A10.9 10.9 0 0 1 12 5c6.4 0 10 7 10 7a15.6 15.6 0 0 1-3.4 4.3M6.5 6.6C3.7 8.4 2 12 2 12s3.6 7 10 7a9.9 9.9 0 0 0 3.4-.6"/>
+            <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="setup-actions">
+        <button type="submit" class="btn btn-primary setup-next">Continue</button>
+      </div>
+    </form>
+    {% elif step == 2 %}
+    <form method="post" action="/setup" class="setup-form" novalidate>
+      <input type="hidden" name="step" value="2">
+      <input type="hidden" name="tonie_username" value="{{ tonie_username }}">
+      {# Round-trip carry: if step 3 was already filled in (ticked tonies,
+         admin username) and the visitor came Back to fix something here,
+         Continue must return to step 3 with that still in place — never
+         the admin password, which is never put in markup. #}
+      {% for tid in ticked %}<input type="hidden" name="target_ids" value="{{ tid }}">{% endfor %}
+      <input type="hidden" name="admin_username" value="{{ admin_username }}">
+      <p class="setup-intro">Signed in as <strong>{{ tonie_username }}</strong>. Create your first
+        library and add one source to it — you can add more later from the library screen.</p>
+
+      <label for="library_name">Library name</label>
+      <input id="library_name" name="library_name" type="text" value="{{ library_name }}" required>
+
+      <label for="source_ref">Source (a video, playlist, RSS feed or audio URL)</label>
+      <input id="source_ref" name="source_ref" type="text" value="{{ source_ref }}"
+             autocomplete="off" required>
+      <span class="field-hint">Paste a link. You can drag files or scan a folder later instead.</span>
+
+      <div class="setup-actions">
+        <button type="submit" name="action" value="back" class="btn btn-secondary">Back</button>
+        <button type="submit" class="btn btn-primary setup-next">Continue</button>
+      </div>
+    </form>
+    {% elif step == 3 %}
+    <form method="post" action="/setup" class="setup-form" novalidate>
+      <input type="hidden" name="step" value="3">
+      <input type="hidden" name="tonie_username" value="{{ tonie_username }}">
+      <input type="hidden" name="library_name" value="{{ library_name }}">
+      <input type="hidden" name="source_ref" value="{{ source_ref }}">
+
+      <p class="setup-intro">
+        Tick which of your tonies "<strong>{{ library_name }}</strong>" should feed. Leave a tonie
+        unticked to leave it untouched — nothing is ever assigned without an explicit tick.
+      </p>
+
+      {% if targets %}
+      <fieldset class="setup-targets">
+        <legend>Discovered tonies</legend>
+        {% for t in targets %}
+        <label class="toggle-label setup-target">
+          <input type="checkbox" name="target_ids" value="{{ t.id }}" {% if t.id in ticked %}checked{% endif %}>
+          {{ t.name }}
+        </label>
+        {% endfor %}
+      </fieldset>
+      {% else %}
+      <p class="empty-state">No tonies were found on this account yet. You can finish setup and
+        assign one later from the dashboard once it appears.</p>
+      {% endif %}
+
+      <section class="setup-admin">
+        <h2>Create your Box Butler login</h2>
+        <p class="field-hint">This is the account you'll use to sign in to this app — separate from
+          the tonie account above.</p>
+
+        <label for="admin_username">Admin username</label>
+        <input id="admin_username" name="admin_username" type="text" value="{{ admin_username }}"
+               autocomplete="username" autocapitalize="off" autocorrect="off" required>
+
+        <label for="admin_password">Admin password</label>
+        <div class="password-field">
+          <input id="admin_password" name="admin_password" type="password"
+                 autocomplete="new-password" minlength="8" required>
+          {# Never echoed back (design-system/box-butler/MASTER.md: secrets
+             are never rendered to the page) — including after Back then
+             Continue. Say so, rather than leave a blank field unexplained. #}
+          <button type="button" class="password-toggle" data-toggle-for="admin_password"
+                  aria-pressed="false" aria-controls="admin_password" aria-label="Show password">
+            <svg class="icon icon-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+            <svg class="icon icon-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden>
+              <path d="M3 3l18 18"/>
+              <path d="M10.6 5.2A10.9 10.9 0 0 1 12 5c6.4 0 10 7 10 7a15.6 15.6 0 0 1-3.4 4.3M6.5 6.6C3.7 8.4 2 12 2 12s3.6 7 10 7a9.9 9.9 0 0 0 3.4-.6"/>
+              <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>
+            </svg>
+          </button>
+        </div>
+        <span class="field-hint">At least 8 characters. Not saved between steps — if you've been here
+          before, enter it again.</span>
+
+        <label for="admin_password_confirm">Confirm password</label>
+        <input id="admin_password_confirm" name="admin_password_confirm" type="password"
+               autocomplete="new-password" minlength="8" required>
+      </section>
+
+      <div class="setup-actions">
+        <button type="submit" name="action" value="back" class="btn btn-secondary">Back</button>
+        <button type="submit" class="btn btn-primary setup-next">Finish setup</button>
+      </div>
+    </form>
+    {% endif %}
+  </main>
+  <script>
+    (function () {
+      function setIconHidden(el, hide) {
+        // Defect fix (Phase 2 polish pass): these are SVG elements, and
+        // SVGElement does not implement the HTMLElement "hidden" IDL
+        // reflection — assigning `.hidden` sets a plain JS property that
+        // never touches the `hidden` content attribute, so both icons
+        // stayed permanently visible. set/removeAttribute works on any
+        // element and is what the `[hidden]` CSS selector matches.
+        if (hide) {
+          el.setAttribute("hidden", "");
+        } else {
+          el.removeAttribute("hidden");
+        }
+      }
+      document.querySelectorAll(".password-toggle").forEach(function (btn) {
+        var input = document.getElementById(btn.getAttribute("data-toggle-for"));
+        var eye = btn.querySelector(".icon-eye");
+        var eyeOff = btn.querySelector(".icon-eye-off");
+        btn.addEventListener("click", function () {
+          var showing = input.type === "text";
+          input.type = showing ? "password" : "text";
+          btn.setAttribute("aria-pressed", String(!showing));
+          btn.setAttribute("aria-label", showing ? "Show password" : "Hide password");
+          setIconHidden(eye, !showing);
+          setIconHidden(eyeOff, showing);
+        });
+      });
+    })();
+  </script>
+</body>
+</html>

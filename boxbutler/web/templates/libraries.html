@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1 class="page-title">Libraries</h1>
+
+<div id="contextual-live-badge-updates" class="sr-only" aria-live="polite" role="status">
+  {%- if announce %}{{ announce }}{% endif -%}
+</div>
+
+{% if not libraries %}
+<div class="empty-state">
+  <p>No libraries yet.</p>
+  <p>Create one below, then add sources to it — a YouTube link, a podcast feed, a folder of files.</p>
+</div>
+{% else %}
+<ul class="library-list">
+  {% for lib in libraries %}
+  <li class="library-list-item">
+    <a class="library-link" href="/libraries/{{ lib.id }}">{{ lib.name }}</a>
+    <span class="muted">{{ lib.mode.value }} &middot; {{ counts.get(lib.id, 0) }} item{{ "s" if counts.get(lib.id, 0) != 1 else "" }}</span>
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+<section class="create-library">
+  <h2>New library</h2>
+  <form method="post" action="/libraries" class="create-library-form">
+    <label for="new-lib-name">Name</label>
+    <input id="new-lib-name" name="name" type="text" required>
+
+    <label for="new-lib-mode">Mode</label>
+    <select id="new-lib-mode" name="mode">
+      <option value="single">Single — always the same item</option>
+      <option value="album">Album — plays everything, then repeats</option>
+      <option value="serial">Serial — plays through in order, remembers its place</option>
+    </select>
+
+    <label for="new-lib-folder">Folder path (optional — makes this a folder library)</label>
+    <input id="new-lib-folder" name="folder_path" type="text" placeholder="/media/example">
+
+    <button type="submit" class="btn btn-primary">Create library</button>
+  </form>
+</section>
+{% endblock %}

@@ -1,0 +1,121 @@
+groups:
+  - name: box-butler
+    rules:
+      # "the check failed" -- we know nothing (spec 13.3). Kept separate
+      # from every other rule below and given a long `for` window so a
+      # brief scrape hiccup never masquerades as a broken tonie, and so a
+      # genuinely broken tonie is never masked by "scrape says nothing".
+      - alert: BoxButlerScrapeDown
+        expr: up{job="box-butler"} == 0
+        for: 10m
+        labels:
+          severity: warning
+          service: box-butler
+        annotations:
+          summary: "Box Butler metrics unreachable"
+          description: "/metrics has not answered for 10 minutes. Tonie state is unknown."
+
+      # "the thing is unhealthy" -- a tonie may be empty right now.
+      - alert: BoxButlerTonieDegraded
+        expr: boxbutler_assignment_state{state="DEGRADED"} == 1
+        for: 0m
+        labels:
+          severity: critical
+          service: box-butler
+        annotations:
+          summary: "A tonie may be empty: {{ $labels.assignment }}"
+          # Safe to run at any hour, including while the scheduler fires: every
+          # entry point takes the same cross-process lock under
+          # <data_dir>/run.lock, so a second run waits or exits with a clear
+          # message instead of clearing the same tonie twice.
+          description: "Cleared but not refilled. Box Butler will repair from the staged file on the next run; run boxbutler run --apply now if bedtime is near."
+
+      # `boxbutler_last_success_timestamp` is a Prometheus Gauge labelled by
+      # `assignment` (final fix review, masking-defect 1 -- it used to be
+      # one unlabelled series set to the *max* across every assignment, so
+      # on a multi-tonie box any one tonie succeeding kept the whole gauge
+      # fresh and a tonie that failed every single night never made this
+      # alert fire). Per assignment, it defaults to 0 (the Unix epoch,
+      # 1970-01-01) until that assignment's first successful run calls
+      # `.set()` on its series -- see `boxbutler/metrics.py::refresh`, which
+      # sets it explicitly every scrape, including the 0.0 case, so the
+      # series always exists once the assignment does.
+      #
+      # A bare `time() - boxbutler_last_success_timestamp > 36*3600` cannot
+      # tell "never succeeded" apart from "succeeded 36h+ ago and stalled"
+      # -- both read as a huge age -- so on a fresh install (or right after
+      # adding a new assignment, before its first run) this would fire
+      # immediately and stay firing forever, which is worse than no alert
+      # at all: an operator who is screamed at on day one mutes the alert
+      # and loses it for the real incident weeks later.
+      #
+      # Fix: `boxbutler_last_success_timestamp > 0` is the guard -- it is
+      # only true, per assignment, once a real success has ever landed for
+      # *that* assignment (real wall-clock timestamps are billions of
+      # seconds, never <= 0), so the `and` below suppresses each
+      # assignment's series until there is evidence that assignment has
+      # ever completed a run. Both sides of the `and` reference the same
+      # labelled metric, so PromQL's default vector matching (match on all
+      # shared labels, here `assignment`) keeps the comparison scoped to
+      # one assignment at a time -- it can never mix one assignment's
+      # left-hand truth with another's right-hand age. On a fresh install
+      # (or a brand-new assignment) that assignment's series has no sample
+      # >0, so the `and` yields no result *for it* and the alert does not
+      # fire for it, while an existing, healthy assignment's series is
+      # unaffected. Once a real success occurs for an assignment, its
+      # left side becomes true and stays true (successive successes only
+      # raise its timestamp further), so a genuine stall on that one
+      # assignment (no success for 36h+ after at least one success) still
+      # fires exactly as before -- regardless of whether every other
+      # assignment on the same box is succeeding nightly.
+      - alert: BoxButlerRunStale
+        expr: (boxbutler_last_success_timestamp > 0) and (time() - boxbutler_last_success_timestamp > 36 * 3600)
+        for: 0m
+        labels:
+          severity: warning
+          service: box-butler
+        annotations:
+          summary: "Box Butler has not completed a run in 36h: {{ $labels.assignment }}"
+          description: "Rotation has quietly stopped for this tonie. Other tonies on this box may still be rotating fine -- check the History screen for this assignment specifically."
+
+      # `run_total{outcome="CRASHED"}` and `run_total{outcome="FAILED"}`
+      # both bypass `BoxButlerTonieDegraded` by design: a CRASHED
+      # assignment's tonie is deliberately left untouched (state stays OK,
+      # see `run.py::_run_one`'s CRASHED branch), and a run-level FAILED
+      # (no_targets_but_managed) touches no assignment at all. Without this
+      # rule those runs were only ever visible on the History screen (final
+      # fix review, masking-defect 1) -- `_notify_outcome` now also raises
+      # a push notification per CRASHED assignment and per FAILED run, but
+      # a notifier can be unconfigured or can silently fail to deliver
+      # (`_notify` logs and swallows), so this rule is the channel-agnostic
+      # backstop. `increase(...[24h]) > 0` fires on the first occurrence
+      # rather than waiting for a repeat, because a crash is never routine.
+      - alert: BoxButlerRunCrashedOrFailed
+        expr: increase(boxbutler_run_total{outcome=~"CRASHED|FAILED"}[24h]) > 0
+        for: 0m
+        labels:
+          severity: warning
+          service: box-butler
+        annotations:
+          summary: "A Box Butler run crashed or failed"
+          description: "outcome={{ $labels.outcome }}. Check the History screen -- a CRASHED assignment's tonie is untouched, but the story will not rotate until this is fixed."
+
+      - alert: BoxButlerExtractionBroken
+        expr: increase(boxbutler_extraction_broken_total[24h]) > 0
+        for: 0m
+        labels:
+          severity: warning
+          service: box-butler
+        annotations:
+          summary: "YouTube extraction broke"
+          description: "yt-dlp or the JS solver failed on a run. Prefetch is buying time; update yt-dlp / yt-dlp-ejs."
+
+      - alert: BoxButlerPrefetchLow
+        expr: boxbutler_prefetch_ready == 0
+        for: 24h
+        labels:
+          severity: warning
+          service: box-butler
+        annotations:
+          summary: "Prefetch buffer empty for {{ $labels.assignment }}"
+          description: "No verified item is ready ahead. The next extraction break hits a bedtime."

@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% from "partials/_icons.html" import icon %}
+
+{% block content %}
+<h1 class="page-title">Run {{ run.id[:8] }}</h1>
+
+<p class="run-outcome">
+  <span class="mono">{{ run.id }}</span>
+  &middot; <span title="{{ run.trigger }}">{{ trigger_label }}</span>
+  &middot; {{ "dry run — nothing was changed on the tonie" if run.dry_run else "apply" }}
+  &middot;
+  <span class="status {{ outcome.css_class }}" title="{{ outcome.raw or '' }}">
+    {{ icon(outcome.icon) }} <strong>{{ outcome.label }}</strong>
+  </span>
+</p>
+
+{% if not grouped %}
+<div class="empty-state">
+  <p>No events recorded for this run.</p>
+</div>
+{% else %}
+{% for g in grouped %}
+<h2>{{ g.label }}</h2>
+<pre class="mono log-block">{% for line in g.lines %}{{ line }}
+{% endfor %}</pre>
+{% endfor %}
+{% endif %}
+
+<p><a href="/runs">&larr; Back to runs</a></p>
+<p><a href="/">&larr; Back to dashboard</a></p>
+{% endblock %}

@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% from "partials/_icons.html" import icon %}
+
+{% block content %}
+<h1 class="page-title">Dashboard</h1>
+
+{# Single live region for the whole screen (design-system/box-butler/pages/dashboard.md
+   "contextual-live-badge-updates" — cards must not each be their own competing live
+   region). A state change announces as a complete phrase, e.g. "Blue Tonie: pinned",
+   not a bare number. Populated server-side via the redirect-after-post ?announce= flash
+   so it works with no client JS, and is still a real aria-live region for anything that
+   updates it later (htmx swaps in Tasks 10-12 can target this same id). #}
+<div id="contextual-live-badge-updates" class="sr-only" aria-live="polite" role="status">
+  {%- if announce %}{{ announce }}{% endif -%}
+</div>
+
+{% if degraded_count > 0 %}
+<div class="degraded-banner" role="alert">
+  {{ icon("warning") }}
+  <span>{{ degraded_count }} tonie{{ "s" if degraded_count != 1 else "" }} DEGRADED — may be empty at bedtime.</span>
+</div>
+{% endif %}
+
+{% if not cards %}
+<div class="empty-state">
+  <p>No tonies yet.</p>
+  <p>Once a tonie appears on your Toniecloud account it will show up here automatically —
+     nothing to configure. See <a href="/settings">Settings</a> to check the connection.</p>
+</div>
+{% else %}
+<div class="card-grid">
+  {% for card in cards %}
+    {% include "partials/tonie_card.html" %}
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

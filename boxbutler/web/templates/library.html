@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1 class="page-title">{{ library.name }}</h1>
+
+<div id="contextual-live-badge-updates" class="sr-only" aria-live="polite" role="status">
+  {%- if announce %}{{ announce }}{% endif -%}
+</div>
+
+{# "Order is meaning on this screen" (design-system/box-butler/pages/library.md):
+   serial mode plays this order across nights, so the library's mode is
+   shown and changeable right at the top, not buried in a settings panel. #}
+<form method="post" action="/libraries/{{ library.id }}/mode" class="mode-form">
+  <label for="mode-select">Mode</label>
+  <select id="mode-select" name="mode" onchange="this.form.requestSubmit()">
+    {% for m in modes %}
+    <option value="{{ m.value }}" {% if library.mode.value == m.value %}selected{% endif %}>
+      {%- if m.value == "single" -%}
+      Single — always the same item
+      {%- elif m.value == "album" -%}
+      Album — plays everything, then repeats
+      {%- else -%}
+      Serial — plays through in order, remembers its place
+      {%- endif -%}
+    </option>
+    {% endfor %}
+  </select>
+  <noscript><button type="submit" class="btn btn-secondary">Set mode</button></noscript>
+</form>
+
+{% if library.folder_path %}
+<form method="post" action="/libraries/{{ library.id }}/scan" class="scan-form">
+  <span class="muted mono">{{ library.folder_path }}</span>
+  <button type="submit" class="btn btn-secondary">Scan folder</button>
+</form>
+{% endif %}
+
+<section class="add-item">
+  <h2>Add a source</h2>
+  <form method="post" action="/libraries/{{ library.id }}/items" enctype="multipart/form-data" class="add-item-form">
+    <label for="add-ref">Link (YouTube video/playlist, podcast feed, or direct audio URL)</label>
+    <input id="add-ref" name="ref" type="text" placeholder="https://example.invalid/..."
+           oninput="bbValidateRef(this)" onblur="bbValidateRef(this)">
+    <span id="add-ref-hint" class="field-hint" aria-live="polite"></span>
+
+    <label for="add-file">Or upload a file</label>
+    <input id="add-file" name="file" type="file">
+
+    <button type="submit" class="btn btn-primary">Add</button>
+  </form>
+</section>
+
+<p class="item-count">{{ total }} item{{ "s" if total != 1 else "" }}{% if total_pages > 1 %} &middot; page {{ page }} of {{ total_pages }}{% endif %}</p>
+
+{% if not items %}
+<div class="empty-state">
+  <p>No items yet. Add one above.</p>
+</div>
+{% else %}
+<ol id="item-list" class="item-list" data-library-id="{{ library.id }}"
+   data-reorder-url="/libraries/{{ library.id }}/reorder" data-page="{{ page }}">
+  {% for item in items %}
+    {% include "partials/item_row.html" %}
+  {% endfor %}
+</ol>
+
+{% if total_pages > 1 %}
+<nav class="pagination" aria-label="Item pages">
+  {% if page > 1 %}<a href="/libraries/{{ library.id }}?page={{ page - 1 }}">&larr; Previous</a>{% endif %}
+  {% if page < total_pages %}<a href="/libraries/{{ library.id }}?page={{ page + 1 }}">Next &rarr;</a>{% endif %}
+</nav>
+{% endif %}
+{% endif %}
+
+<section class="delete-library">
+  <h2>Delete this library</h2>
+  <p class="muted">Deletes {{ library.name }} and all {{ total }} of its items. This cannot be undone.
+     Type the library's name to confirm.</p>
+  <form method="post" action="/libraries/{{ library.id }}/delete" class="delete-library-form"
+        data-library-name="{{ library.name }}" onsubmit="return bbConfirmDelete(this);">
+    <label for="delete-confirm" class="sr-only">Type "{{ library.name }}" to confirm deletion</label>
+    <input id="delete-confirm" name="confirm" type="text" placeholder="{{ library.name }}" autocomplete="off">
+    <button type="submit" class="btn btn-destructive">Delete library</button>
+  </form>
+</section>
+
+<script>
+  // inline-validation (design-system/box-butler/pages/library.md): the add
+  // field validates on blur (and live on input) and reports what it will
+  // do, without needing a round trip. It never blocks submission on its
+  // own — a bare ref is still accepted server-side, the fake ingest hook
+  // in Phase 2 resolves anything — this is guidance, not a hard gate.
+  function bbValidateRef(input) {
+    const hint = document.getElementById("add-ref-hint");
+    const value = input.value.trim();
+    if (!value) {
+      hint.textContent = "";
+      return;
+    }
+    try {
+      const url = new URL(value);
+      hint.textContent = "Looks like a link: " + url.hostname;
+    } catch (e) {
+      hint.textContent = "Not a recognised link — check it, or use the file upload instead.";
+    }
+  }
+
+  // confirmation-dialogs: deleting a library requires typing its name
+  // back, checked here as a client-side courtesy before the same check
+  // the server enforces regardless (POST /libraries/{id}/delete 400s
+  // without a matching `confirm` field) — belt and braces, not either/or.
+  function bbConfirmDelete(form) {
+    const libraryName = form.dataset.libraryName;
+    const typed = form.elements["confirm"].value;
+    if (typed !== libraryName) {
+      return true; // let the server's 400 explain it; no silent no-op
+    }
+    return confirm("Delete " + libraryName + " and everything in it? This cannot be undone.");
+  }
+</script>
+
+{# dragging-alternative (WCAG 2.2 AA, High) — the single most important
+   rule on this screen: Move up/Move down buttons (item_row.html) always
+   work, with or without this script. SortableJS drag is an addition on
+   top, initialised only for a mouse (`matchMedia("(pointer:fine)")`), so
+   a touch/phone visitor never gets a half-working drag layer — buttons
+   are the only mechanism proven to work there.
+
+   drag-threshold — `delay`/`delayOnTouchOnly`/`touchStartThreshold` give
+   drag a deliberate movement/time threshold before it starts, so a plain
+   scroll isn't mistaken for the start of a reorder. #}
+<script src="/static/vendor/sortable.min.js" defer></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    const list = document.getElementById("item-list");
+    if (!list || typeof Sortable === "undefined") return;
+    if (!window.matchMedia || !window.matchMedia("(pointer: fine)").matches) return;
+
+    Sortable.create(list, {
+      handle: ".drag-handle",
+      animation: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 150,
+      delay: 100,
+      delayOnTouchOnly: true,
+      touchStartThreshold: 5,
+      onEnd: function (evt) {
+        // A drop back where it started must be a no-op, not a rewrite
+        // (Task 10 review, Critical 2) — skip the request entirely rather
+        // than relying only on the server's position != ? guard.
+        if (evt.oldIndex === evt.newIndex) return;
+        const order = Array.from(list.children).map((li) => li.dataset.itemId).join(",");
+        const page = list.dataset.page || "1";
+        fetch(list.dataset.reorderUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          // `page` tells the server which contiguous position range these
+          // ids belong to — SortableJS only ever sees the current page's
+          // rows, so posting bare 0-based positions here would collide
+          // with an earlier page's real items (Critical 2).
+          body: "order=" + encodeURIComponent(order) + "&page=" + encodeURIComponent(page),
+        }).then(function () {
+          window.location.reload();
+        });
+      },
+    });
+  });
+
+  // Important 3 (Task 10 review): after a Move up/down redirect, restore
+  // focus to the moved item's row instead of leaving it at the top of the
+  // document — otherwise "conformant yet unusable" keyboard reordering:
+  // moving an item three places means re-tabbing past the nav, mode form,
+  // add form and every preceding row each time.
+  //
+  // Review round 2: landing on the row isn't enough on its own —
+  // item_row.html always renders Move up before Move down in DOM order,
+  // so a plain "first enabled .move-btn" selector kept landing on Move
+  // up even after a Move-down press, costing an extra Tab on exactly the
+  // sequential-move case this exists for. The fragment now carries which
+  // direction was pressed (`#item-<id>:up` / `#item-<id>:down`) and the
+  // matching button (by its aria-label) is focused instead. If that
+  // specific button has since become disabled — the item moved to that
+  // end of the list — fall back to the row's other move button, since a
+  // disabled button can't take focus.
+  document.addEventListener("DOMContentLoaded", function () {
+    const m = /^#item-([^:]+)(?::(up|down))?$/.exec(window.location.hash);
+    if (!m) return;
+    const row = document.querySelector('[data-item-id="' + CSS.escape(m[1]) + '"]');
+    if (!row) return;
+    const dir = m[2];
+    let target = null;
+    if (dir) {
+      const label = dir === "down" ? "Move down" : "Move up";
+      target = row.querySelector('.move-btn[aria-label="' + label + '"]:not([disabled])');
+    }
+    if (!target) {
+      target = row.querySelector(".move-btn:not([disabled])") || row.querySelector(".move-btn");
+    }
+    if (target) target.focus();
+  });
+</script>
+{% endblock %}
