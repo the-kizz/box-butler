@@ -52,6 +52,7 @@ from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import RedirectResponse, Response
 from starlette.templating import Jinja2Templates
 
+from ...domain.fitting import DEFAULT_CAP_SECONDS, clamp_cap
 from ...domain.models import Library, LibraryMode
 from ...store.db import Store
 from ..auth import require_login
@@ -148,6 +149,18 @@ def library_detail(
     items = all_items[start : start + PAGE_SIZE]
     total_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
 
+    # `-t cap -c copy` (audio/ffmpeg.py) keeps only an item's first
+    # `cap_seconds` on the tonie and silently discards the rest -- a
+    # folder-backed library's items now carry a real probed `seconds`
+    # (boxbutler/sources/folder.py), so an item past the cap can and
+    # should say so on its row (item_row.html) rather than reading as a
+    # plain "N min" that implies the whole thing plays. `cap_seconds` is
+    # read the same way settings.py's own render does -- the configured
+    # value clamped to the sink's real `maxSeconds`, never hard-coded --
+    # so the warning always matches what a run would actually do.
+    sink = request.app.state.sink
+    cap_seconds = clamp_cap(store.settings.get("cap_seconds", DEFAULT_CAP_SECONDS), sink.limits.max_seconds)
+
     return templates.TemplateResponse(
         request,
         "library.html",
@@ -159,6 +172,7 @@ def library_detail(
             "total_pages": total_pages,
             "modes": list(LibraryMode),
             "announce": announce,
+            "cap_seconds": cap_seconds,
         },
     )
 

@@ -1,0 +1,37 @@
+{# Searchable pin picker (fix: the plain <select> dumped every item in
+   the library into the page -- measured 839 <option> tags / 108 KB for
+   an 838-episode podcast feed, per managed tonie). Included from
+   tonie_card.html in place of the <select> once a library reaches
+   PIN_SEARCH_THRESHOLD (dashboard.py, == library.py's PAGE_SIZE).
+
+   htmx active search, not a <datalist> (selecting an option refires the
+   triggering input event and double-submits) and not a hand-rolled ARIA
+   combobox (too much bespoke JS for one control here). The <input>'s own
+   hx-get intercepts for progressive enhancement; the surrounding <form>'s
+   real method="get" action=... means a plain submit (JavaScript
+   disabled, or just pressing Enter) still filters -- it lands on
+   pin_options.html, a full working page built from the same results
+   partial, rather than doing nothing. #}
+<div class="pin-search" id="pin-search-{{ card.assignment.id }}">
+  <form method="get" action="/assignments/{{ card.assignment.id }}/pin-options" class="pin-search-form">
+    <label class="sr-only" for="pin-search-q-{{ card.assignment.id }}">Search items to pin on {{ card.assignment.target_name }}</label>
+    {{ icon("push-pin") }}
+    <input type="search" id="pin-search-q-{{ card.assignment.id }}" name="q" value=""
+           placeholder="Search to pin&hellip;" autocomplete="off"
+           hx-get="/assignments/{{ card.assignment.id }}/pin-options"
+           hx-trigger="input changed delay:300ms, search"
+           hx-target="#pin-search-results-{{ card.assignment.id }}"
+           hx-swap="innerHTML">
+    <noscript><button type="submit" class="btn btn-secondary">Search</button></noscript>
+  </form>
+
+  {% if card.assignment.pinned_item_id %}
+  <form method="post" action="/assignments/{{ card.assignment.id }}/pin" class="pin-clear-form">
+    <button type="submit" class="btn btn-secondary">Clear pin</button>
+  </form>
+  {% endif %}
+
+  <div id="pin-search-results-{{ card.assignment.id }}" class="pin-search-results" aria-live="polite">
+    <p class="muted pin-search-hint">Type to search this library's items.</p>
+  </div>
+</div>

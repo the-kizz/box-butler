@@ -9,6 +9,8 @@
     <p class="status status-DEGRADED">{{ icon("warning") }} <span>DEGRADED</span></p>
     {% elif card.status == "PAUSED" %}
     <p class="status status-PAUSED">{{ icon("pause-circle") }} <span>Paused</span></p>
+    {% elif card.status == "PINNED" %}
+    <p class="status status-PINNED">{{ icon("push-pin") }} <span>Pinned</span></p>
     {% else %}
     <p class="status status-UNMANAGED">{{ icon("circle-dashed") }} <span>Unmanaged — no library assigned</span></p>
     {% endif %}
@@ -18,6 +20,14 @@
   <p class="degraded-explain">This tonie may be empty at bedtime — the last upload did not finish.</p>
   {% elif card.status == "PAUSED" %}
   <p class="paused-explain">Rotation is paused — nothing will be loaded onto this tonie until you resume it.</p>
+  {% elif card.status == "PINNED" %}
+  {# fix round: a pin freezes the cursor (rotation.py's choose_next sets
+     rotates=False) but the "Rotating" checkbox below stayed checked and
+     was the only signal on the card -- reasonably read as "the pin didn't
+     take". This line, plus the PINNED badge above, says what's actually
+     true; "Rotating" stays as its own control (the pause/resume toggle,
+     a genuinely different thing) rather than being repurposed. #}
+  <p class="pinned-explain">Rotation is frozen on this item until it is unpinned.</p>
   {% endif %}
 
   {% if card.library %}
@@ -58,7 +68,9 @@
       {% endif %}
     </p>
 
-    {# One row: sr-only label keeps an accessible name without the global
+    {% if card.pin_options is not none %}
+    {# Below PIN_SEARCH_THRESHOLD: today's plain <select>, unchanged. One
+       row: sr-only label keeps an accessible name without the global
        block-level <label> forcing its own line (fix round 1, minor 5). #}
     <form method="post" action="/assignments/{{ card.assignment.id }}/pin" class="pin-form">
       <label class="sr-only" for="pin-{{ card.assignment.id }}">Pin an item on {{ card.assignment.target_name }}</label>
@@ -71,6 +83,11 @@
       </select>
       <button type="submit" class="btn btn-secondary">Set pin</button>
     </form>
+    {% else %}
+    {# At/above PIN_SEARCH_THRESHOLD: htmx active search instead of
+       dumping the whole library into a <select> (see partials/pin_search.html). #}
+    {% include "partials/pin_search.html" %}
+    {% endif %}
 
     {# Final coherence review, Major-3: `POST /assignments/{id}/enabled` was
        fully wired and orchestrator-effective (run.py:500 skips a disabled

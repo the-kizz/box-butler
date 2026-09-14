@@ -100,6 +100,26 @@ def test_status_shows_an_assignment_with_no_library_as_unmanaged_not_ok(factory,
     assert "OK" not in row
 
 
+def test_status_shows_a_pinned_assignment_as_pinned_not_ok(factory, world, capsys):
+    """A pin freezes rotation (`choose_next` sets `rotates=False`) but is a
+    deliberate operator choice, not a health problem -- it must not be
+    reported as the raw "OK" state, the same "raw state lies" bug already
+    fixed once for PAUSED and once for UNMANAGED (see the two tests above).
+    The dashboard card and this command must agree with each other, per
+    `boxbutler/domain/rotation.py::pin_active`, the single function both
+    now share.
+    """
+    store = world["store"]
+    a = store.assignments.list()[0]
+    store.assignments.set_pin(a.id, world["items"][0].id)
+
+    assert main(["status"], deps_factory=factory) == 0
+    out = capsys.readouterr().out
+    row = next(line for line in out.splitlines() if line.startswith(a.target_name))
+    assert "PINNED" in row
+    assert "OK" not in row
+
+
 def test_status_next_column_truncates_long_titles_and_keeps_columns_aligned(factory, world, store, capsys):
     """Real output: NEXT joined the full titles of all three upcoming items
     and one row ran past 400 characters, unreadable without `cut -c1-120`.

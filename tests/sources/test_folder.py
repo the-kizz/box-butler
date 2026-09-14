@@ -219,3 +219,78 @@ def test_restored_after_reappearing(store, tmp_path):
     res = scan_folder(store, lib, tmp_path)
     assert res.restored == 1
     assert store.items.list(lib.id)[0].state == ItemState.OK
+
+
+# --- Duration probing (fix: folder items shipped with seconds=None, so
+# the library page read every one of them as "unknown duration" and never
+# warned that a long item would be silently trimmed to the cap) --------
+
+
+def _fake_probe(durations: dict[str, float]):
+    """A `Callable[[Path], ProbeResult]` stand-in — never shells out to
+    real ffprobe (that's the separately-marked `@pytest.mark.ffmpeg`
+    suite's job). Keyed by filename so a test can give different files
+    different durations."""
+    def probe(path: Path) -> ProbeResult:
+        return ProbeResult(
+            seconds=durations[path.name], codec="aac", sample_rate=44100,
+            channels=2, bytes=0, container="mp3", tags={},
+        )
+    return probe
+
+
+def test_scan_probes_duration_for_new_files(store, tmp_path):
+    mk(tmp_path, "long.mp3", b"a" * 50)
+    lib = store.libraries.create("Book", folder_path=str(tmp_path))
+    res = scan_folder(store, lib, tmp_path, probe=_fake_probe({"long.mp3": 9060.0}))
+    assert res.added == 1
+    assert store.items.list(lib.id)[0].seconds == 9060.0
+
+
+def test_unprobeable_file_stores_none_not_zero(store, tmp_path):
+    """This codebase has shipped the "unknown recorded as a definite
+    value" bug shape a dozen times, and `probe()` returning 0.0 for an
+    unknown duration was literally one of them. A file that can't be
+    probed (corrupt header, no probe given at all) must leave `seconds`
+    as `None` — never a fake 0.0 that would read as "this item is 0
+    minutes long" instead of "we don't know"."""
+    mk(tmp_path, "bad.mp3", b"a" * 50)
+    lib = store.libraries.create("Book", folder_path=str(tmp_path))
+
+    def blows_up(_path):
+        raise ValueError("corrupt header")
+
+    res = scan_folder(store, lib, tmp_path, probe=blows_up)
+    assert res.added == 1
+    item = store.items.list(lib.id)[0]
+    assert item.seconds is None
+
+
+def test_rescan_with_no_filesystem_change_probes_nothing_and_writes_nothing(store, tmp_path):
+    """Existing tested property (`test_nothing_is_written_to_the_media_root`
+    and friends): a rescan of an unchanged folder must still write nothing.
+    Adding duration probing must not break that -- an unchanged file's
+    duration is already known (or already recorded as unknown) and its
+    audio content, per the content-based fingerprint, has not changed
+    either, so there is nothing to re-probe. Proven here by counting
+    `probe` calls, not just by checking the DB write count: a probe call
+    that happened to be idempotent would pass a write-count-only check
+    while still doing the exact wasted, unnecessary I/O this property is
+    supposed to rule out."""
+    mk(tmp_path, "1.mp3", b"a" * 50)
+    lib = store.libraries.create("Book", folder_path=str(tmp_path))
+    calls: list[str] = []
+
+    def counting_probe(path: Path) -> ProbeResult:
+        calls.append(path.name)
+        return ProbeResult(seconds=120.0, codec="aac", sample_rate=44100, channels=2, bytes=0, container="mp3", tags={})
+
+    res1 = scan_folder(store, lib, tmp_path, probe=counting_probe)
+    assert res1.added == 1
+    assert calls == ["1.mp3"]
+
+    calls.clear()
+    res2 = scan_folder(store, lib, tmp_path, probe=counting_probe)
+    assert res2.unchanged == 1
+    assert res2.added == 0
+    assert calls == []

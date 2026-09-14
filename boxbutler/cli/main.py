@@ -44,6 +44,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from boxbutler.domain.models import AssignmentState, RunTrigger
+from boxbutler.domain.rotation import pin_active
 from boxbutler.logging import make_logger
 from boxbutler.orchestrator.prefetch import prefetch_assignment, ready_depth, upcoming_item_ids
 from boxbutler.orchestrator.retention import cache_usage_bytes, evict, plan_eviction
@@ -240,6 +241,7 @@ def _cmd_status(deps: AppDeps, args: argparse.Namespace) -> int:
         holds = ", ".join(c.title for c in store.chapters.for_assignment(a.id)) or "-"
 
         if a.library_id is not None:
+            items = store.items.list(a.library_id)
             next_titles = []
             for item_id in upcoming_item_ids(store, a, depth):
                 item = store.items.get(item_id)
@@ -263,11 +265,12 @@ def _cmd_status(deps: AppDeps, args: argparse.Namespace) -> int:
         # Same precedence as the dashboard card (web/routes/dashboard.py):
         # DEGRADED outranks everything (a tonie that may be empty at bedtime
         # needs repair regardless of anything else), then PAUSED, then
-        # UNMANAGED, then OK. Reporting the raw state here showed a paused
-        # assignment as "OK" -- the orchestrator skips it forever, so that
-        # told the operator bedtime was covered when nothing would ever run
-        # again. The dashboard was fixed for this; `status` is the other
-        # channel an operator checks, and it said the same wrong thing.
+        # UNMANAGED, then PINNED, then OK. Reporting the raw state here
+        # showed a paused assignment as "OK" -- the orchestrator skips it
+        # forever, so that told the operator bedtime was covered when
+        # nothing would ever run again. The dashboard was fixed for this;
+        # `status` is the other channel an operator checks, and it said the
+        # same wrong thing.
         #
         # Reproduced live a second time: an assignment row with
         # library_id=None (created by `library import`, Task 33) printed
@@ -276,12 +279,25 @@ def _cmd_status(deps: AppDeps, args: argparse.Namespace) -> int:
         # and before the row existed at all `status` correctly said
         # UNMANAGED. The row's mere existence made the display *worse* --
         # it now claimed a tonie was fine when nothing will ever manage it.
+        #
+        # PINNED (verified in a browser, dashboard fix): pinning an item
+        # freezes the cursor (rotation.choose_next sets rotates=False) but
+        # is a deliberate operator choice, not a health problem -- it does
+        # not outrank DEGRADED/PAUSED/UNMANAGED (none of which a pin
+        # implies anything about), but it must not collapse into the same
+        # "OK" as a freely-rotating tonie either. `pin_active` is the exact
+        # test `choose_next` itself uses, imported rather than re-derived
+        # so this command can never drift out of agreement with the
+        # dashboard card about the same assignment (final coherence
+        # review: they already have, twice).
         if a.state == AssignmentState.DEGRADED:
             state = str(a.state)
         elif not a.enabled:
             state = "PAUSED"
         elif a.library_id is None:
             state = "UNMANAGED"
+        elif pin_active(a, items):
+            state = "PINNED"
         else:
             state = str(a.state)
         rows.append((target.name, state, holds, nxt, last_success, ready))

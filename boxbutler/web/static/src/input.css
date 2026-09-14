@@ -373,9 +373,17 @@ label {
    lower-urgency state than DEGRADED, still never colour-only (always
    paired with the pause-circle icon and the word "Paused"). */
 .status-PAUSED { color: var(--warn); font-weight: 600; }
+/* PINNED: deliberate, not unhealthy (final coherence review, the "two
+   channels disagree" bug family) -- distinct from OK's plain green so the
+   pin is visible at a glance, but never the destructive/warn colours,
+   which this project reserves for "needs attention". Always paired with
+   the push-pin icon and the word "Pinned" (colour is never the only
+   signal). */
+.status-PINNED { color: var(--accent); font-weight: 600; }
 
 .degraded-explain { color: var(--bad); margin: 0; }
 .paused-explain { color: var(--warn); margin: 0; }
+.pinned-explain { color: var(--accent); margin: 0; }
 
 .card-body { display: flex; flex-direction: column; gap: 0.5rem; }
 .on-it-now, .up-next, .last-synced { margin: 0; }
@@ -391,6 +399,39 @@ label {
 }
 .pin-form select, .assign-form select { flex: 1; min-width: 10rem; }
 .pin-form .icon { flex-shrink: 0; }
+
+/* Searchable pin picker (partials/pin_search.html) — at/above
+   PIN_SEARCH_THRESHOLD, replaces the plain <select> so a large library
+   never dumps every item into the page (touch-target-size,
+   visible-focus-rings and reduced-motion all inherit from the global
+   input/button/:focus-visible rules above; nothing here overrides them). */
+.pin-search { margin-top: 0.25rem; }
+.pin-search-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.pin-search-form input[type="search"] { flex: 1; min-width: 10rem; }
+.pin-search-form .icon { flex-shrink: 0; }
+.pin-clear-form { margin-top: 0.35rem; }
+.pin-search-results { margin-top: 0.5rem; }
+.pin-search-hint { margin: 0; }
+.pin-search-result-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pin-search-result-form { margin: 0; }
+.pin-search-result-btn {
+  width: 100%;
+  text-align: left;
+  white-space: normal;
+}
+.pin-search-more { margin: 0.35rem 0 0; }
 
 /* DEGRADED: Repair is the primary action; ordinary Run now is demoted into
    a closed-by-default disclosure so it doesn't compete for attention
@@ -602,6 +643,12 @@ label {
   font-weight: 600;
   border: 1px solid var(--line);
 }
+/* Trim warning (item_row.html) — an item whose known duration exceeds the
+   effective cap; amber, the same "worth a second look, not broken"
+   treatment as .status-PAUSED/.status-UNTOUCHED, never colour-only since
+   the row text itself says "trimmed to ... on the tonie". */
+.duration-trim-warning { color: var(--warn); font-weight: 600; }
+
 .pill-ok { color: var(--ok); border-color: var(--ok); }
 .pill-unavailable { color: var(--bad); border-color: var(--bad); }
 .pill-loudnorm { color: var(--fg); }

@@ -53,6 +53,15 @@ _TEMPLATES_DIR = _WEB_DIR / "templates"
 PLACEHOLDER_PROTECTED_PATHS: list[str] = []
 
 
+def _format_hm(seconds: float) -> str:
+    """`9060.0` -> `"2h 31m"`; anything under an hour -> `"31m"` with no
+    leading `0h`. Shared by the library page's item duration and its
+    trim-cap warning (item_row.html) so both read in the same units."""
+    total_min = int(seconds // 60)
+    hours, minutes = divmod(total_min, 60)
+    return f"{hours}h {minutes}m" if hours else f"{minutes}m"
+
+
 class RunnerProtocol(Protocol):
     def run(self, *, assignment_ids: list[str] | None, apply: bool, trigger: RunTrigger) -> str: ...
 
@@ -75,6 +84,11 @@ def create_app(
 
     templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
     templates.env.globals["APP_NAME"] = APP_NAME
+    # "2h 31m" formatting for a duration in seconds — used by the library
+    # page's over-cap trim warning (item_row.html), which needs the same
+    # h/m rendering for both an item's own duration and the effective cap
+    # it's being compared against.
+    templates.env.filters["hm"] = _format_hm
 
     app.state.store = store
     app.state.sink = sink

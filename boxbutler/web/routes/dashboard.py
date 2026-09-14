@@ -24,13 +24,14 @@ from datetime import UTC, datetime, timedelta
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 from starlette.templating import Jinja2Templates
 
 from ...domain.models import AssignmentMode, AssignmentState, RunTrigger
-from ...domain.rotation import PlanInput, choose_next
+from ...domain.rotation import PlanInput, choose_next, pin_active
 from ...store.db import Store
 from ..auth import require_login
+from .library import PAGE_SIZE as PIN_SEARCH_THRESHOLD
 
 router = APIRouter()
 
@@ -91,6 +92,25 @@ def _card(store: Store, sink, a) -> dict:
         # than showing nothing at all, since it claims a tonie is fine
         # when nothing will ever run against it.
         status = "UNMANAGED"
+    elif pin_active(a, items):
+        # Verified in a browser: pin an item, click Set pin, and the card
+        # kept showing "Rotating (checked)" as the only signal -- pinning
+        # freezes the cursor (`rotation.choose_next` sets `rotates=False`)
+        # but never touches `assignment.enabled`, so nothing on the card
+        # changed. A pin is a deliberate operator choice, not a health
+        # problem -- it does not outrank DEGRADED/PAUSED/UNMANAGED, all of
+        # which mean "this needs attention" in a way a pin doesn't -- but
+        # it is also not nothing, so it must not collapse into the same
+        # "OK" as an unpinned, freely-rotating tonie. `pin_active` is the
+        # exact same test `choose_next` itself uses to decide
+        # reason="PINNED"/rotates=False (`domain/rotation.py`), imported
+        # rather than re-derived here so this can never drift out of
+        # agreement with what the orchestrator would actually do -- and
+        # the CLI's `status` command (`cli/main.py::_cmd_status`) uses the
+        # same function at the same point in the same precedence chain, so
+        # the two channels can't disagree about the same tonie (final
+        # coherence review: they already have, twice).
+        status = "PINNED"
     else:
         status = "OK"
 
@@ -129,7 +149,17 @@ def _card(store: Store, sink, a) -> dict:
         "up_next": up_next,
         "plan_reason": plan_reason,
         "stale": stale,
-        "pin_options": items,
+        # Below PIN_SEARCH_THRESHOLD (== library.py's PAGE_SIZE, imported
+        # rather than duplicated), today's plain <select> still gets every
+        # item, exactly as before -- small libraries are well served by it.
+        # At/above the threshold this is `None`, and tonie_card.html
+        # renders the htmx search widget instead: measured on the real
+        # bug, a 250-item library produced 251 <option> tags and 35 KB of
+        # dashboard HTML, 838 items 839 options and 108 KB, *per managed
+        # tonie* -- so at threshold the page must stop enumerating every
+        # item here at all, not just stop rendering them.
+        "pin_options": items if len(items) < PIN_SEARCH_THRESHOLD else None,
+        "pin_search": len(items) >= PIN_SEARCH_THRESHOLD,
         "libraries": store.libraries.list(),
     }
 
@@ -196,6 +226,59 @@ def pin_assignment(
     a = store.assignments.get(assignment_id)
     phrase = f"{a.target_name}: pin cleared" if not item_id else f"{a.target_name}: pinned"
     return _redirect_to_dashboard(phrase)
+
+
+@router.get("/assignments/{assignment_id}/pin-options")
+def pin_options(
+    request: Request,
+    assignment_id: str,
+    q: str = "",
+    user: str = Depends(require_login),
+):
+    """The pin picker's search endpoint (approved design: htmx active
+    search, not a `<datalist>` -- selecting a datalist option refires the
+    triggering input event and double-submits -- and not a hand-rolled
+    ARIA combobox, too much bespoke JS for one control in a project that
+    otherwise ships almost none).
+
+    Always returns at most `PIN_SEARCH_THRESHOLD` matches, the same cap
+    the library page itself paginates at, regardless of how many items
+    actually match -- an 838-episode feed searched for a common word must
+    still return a small page, not another 839-option dump by another
+    name. Two response shapes from one route: an htmx request (the
+    `HX-Request` header htmx sets on every request it issues) gets just
+    the results fragment to swap in place; anything else -- the search
+    `<form>`'s own `method="get" action=...`, i.e. a plain submit with
+    JavaScript disabled -- gets a full, working page built from the same
+    fragment, so the feature keeps working with no JS at all.
+    """
+    store: Store = request.app.state.store
+    templates = _templates(request)
+    a = store.assignments.get(assignment_id)
+    if a is None or a.library_id is None:
+        return Response(status_code=404)
+    library = store.libraries.get(a.library_id)
+    items = store.items.list(a.library_id)
+
+    needle = q.strip().lower()
+    matches = [it for it in items if needle in it.title.lower()] if needle else items
+    total_matches = len(matches)
+    results = matches[:PIN_SEARCH_THRESHOLD]
+    truncated = total_matches > len(results)
+
+    ctx = {
+        "assignment": a,
+        "library": library,
+        "q": q,
+        "results": results,
+        "total_matches": total_matches,
+        "truncated": truncated,
+        "cap": PIN_SEARCH_THRESHOLD,
+    }
+
+    is_htmx = request.headers.get("hx-request", "").lower() == "true"
+    template_name = "partials/pin_options_results.html" if is_htmx else "pin_options.html"
+    return templates.TemplateResponse(request, template_name, ctx)
 
 
 @router.post("/assignments/{assignment_id}/library")

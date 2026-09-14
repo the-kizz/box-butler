@@ -24,6 +24,21 @@ def eligible(items: list[Item]) -> list[Item]:
     )
 
 
+def pin_active(assignment: Assignment, items: list[Item]) -> bool:
+    """Whether `assignment`'s pin currently freezes rotation — the exact
+    condition `choose_next` uses to decide `reason="PINNED", rotates=False`
+    (a pinned item that is disabled/unavailable is not a valid freeze
+    point, so it does not count here either). Exposed as its own function
+    so every surface that reports assignment state — the dashboard card
+    (`web/routes/dashboard.py::_card`) and the CLI's `status` command —
+    computes "is this pinned" the same way instead of each re-deriving a
+    slightly different test that can drift out of agreement (the two
+    channels disagreeing about the same state is a bug this project has
+    already shipped twice)."""
+    pinned = assignment.pinned_item_id
+    return pinned is not None and any(i.id == pinned for i in eligible(items))
+
+
 def _permutation(items: list[Item], seed: int) -> list[Item]:
     """A single seeded permutation of `items`, stable across calls for a
     given seed and input — same seed, same permutation, every run."""

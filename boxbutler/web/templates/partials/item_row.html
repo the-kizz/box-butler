@@ -43,8 +43,22 @@
   <div class="item-main">
     <p class="item-title">{{ item.title }}</p>
     <p class="item-meta">
+      {# Trim warning: `-t cap -c copy` (audio/ffmpeg.py) keeps only an
+         item's first `cap_seconds` on the tonie and silently discards the
+         rest -- a 2h31m story becomes its first 89 minutes with nothing
+         said about it. Shown only when the duration is actually known
+         (never guessed) and only when it genuinely exceeds the effective
+         cap (`cap_seconds`, from library.py's route -- the configured
+         value already clamped to the sink's real limit, so this can never
+         warn about a trim that wouldn't really happen). #}
       {% if item.seconds %}
-      <span class="mono duration">{{ (item.seconds / 60) | round(0, "floor") | int }} min</span>
+        {% if item.seconds > cap_seconds %}
+        <span class="mono duration duration-trim-warning">
+          {{ item.seconds | hm }} &mdash; trimmed to {{ (cap_seconds / 60) | round(0, "floor") | int }}m on the tonie
+        </span>
+        {% else %}
+        <span class="mono duration">{{ (item.seconds / 60) | round(0, "floor") | int }} min</span>
+        {% endif %}
       {% else %}
       <span class="muted">unknown duration</span>
       {% endif %}

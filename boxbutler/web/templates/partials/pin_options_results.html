@@ -1,0 +1,33 @@
+{# Pin search results fragment — shared by the htmx swap
+   (GET /assignments/{id}/pin-options with the HX-Request header) and the
+   no-JS fallback page (pin_options.html). Context: `assignment`, `q`,
+   `results` (already capped to PIN_SEARCH_THRESHOLD), `total_matches`,
+   `truncated`.
+
+   Each result is its own tiny <form> posting straight to the existing
+   POST /assignments/{id}/pin route (no new pin-setting logic) — a plain
+   submit, same as the original <select>'s "Set pin" button, so it works
+   identically with or without JS. #}
+{% if not results %}
+  {% if q %}
+  <p class="muted pin-search-hint">No matches for &ldquo;{{ q }}&rdquo;.</p>
+  {% else %}
+  <p class="muted pin-search-hint">Type to search this library's items.</p>
+  {% endif %}
+{% else %}
+<ul class="pin-search-result-list">
+  {% for item in results %}
+  <li>
+    <form method="post" action="/assignments/{{ assignment.id }}/pin" class="pin-search-result-form">
+      <input type="hidden" name="item_id" value="{{ item.id }}">
+      <button type="submit" class="btn btn-secondary pin-search-result-btn">
+        {{ item.title }}{% if assignment.pinned_item_id == item.id %} <span class="pill pill-ok">pinned</span>{% endif %}
+      </button>
+    </form>
+  </li>
+  {% endfor %}
+</ul>
+{% if truncated %}
+<p class="muted pin-search-more">{{ total_matches }} matches — showing the first {{ cap }}. Narrow your search to see more.</p>
+{% endif %}
+{% endif %}

@@ -203,6 +203,51 @@ def test_item_position_numbers_are_shown(seeded, store):
     assert 'class="item-position"' in html
 
 
+def test_long_item_warns_it_will_be_trimmed(seeded, store):
+    """`-t cap -c copy` silently keeps only the first `cap_seconds` of a
+    long item -- a 2h31m story becomes its first 89 minutes on the tonie,
+    with nothing on the library page saying so. A folder-backed library's
+    items are exactly the case that used to hide this worst: `seconds` is
+    probed now (fix elsewhere), but a known duration past the cap must
+    still say so plainly on the row, not just show a plain "N min" as if
+    the whole thing would play.
+    """
+    lib = _lib(store)
+    long_item = store.items.add(
+        library_id=lib.id,
+        kind=ItemKind.URL,
+        source_ref="https://example.invalid/long",
+        source_key="long-story",
+        title="The Very Long Bedtime Saga",
+        seconds=9060.0,  # 2h31m -- well past the ~89m default cap
+    )
+    html = seeded.get(f"/libraries/{lib.id}").text
+    row = html[html.index(long_item.title):]
+    row = row[: row.index("</li>")]
+    assert "2h 31m" in row
+    assert "trimmed to 89m" in row
+
+
+def test_unknown_duration_item_still_says_unknown_not_a_guess(seeded, store):
+    """A folder item whose duration couldn't be probed must keep saying
+    "unknown duration" -- never silently guess, and never warn about a
+    trim it has no evidence will actually happen."""
+    lib = _lib(store)
+    unknown_item = store.items.add(
+        library_id=lib.id,
+        kind=ItemKind.FOLDER_FILE,
+        source_ref="unprobeable.mp3",
+        source_key="unprobeable",
+        title="Mystery Length Story",
+        seconds=None,
+    )
+    html = seeded.get(f"/libraries/{lib.id}").text
+    row = html[html.index(unknown_item.title):]
+    row = row[: row.index("</li>")]
+    assert "unknown duration" in row
+    assert "trimmed to" not in row
+
+
 # --- Fix round 1 (Task 10 review) --------------------------------------
 
 def test_delete_renumbers_remaining_items_densely(seeded, store):

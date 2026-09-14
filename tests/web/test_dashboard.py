@@ -6,9 +6,26 @@ conftest.py (boxbutler.web.fake_data.seed_fake against the real FakeSink).
 """
 import re
 
+from boxbutler.domain.models import ItemKind
+from boxbutler.web.routes.library import PAGE_SIZE
+
 
 def _first_managed(store):
     return next(a for a in store.assignments.list() if a.library_id and a.state == "OK").id
+
+
+def _bulk_up_library(store, library_id, n):
+    """Grow a library well past PIN_SEARCH_THRESHOLD (== library.py's
+    PAGE_SIZE) with distinctively-named items, the shape the operator's
+    real 838-episode podcast feed exercises."""
+    for i in range(n):
+        store.items.add(
+            library_id=library_id,
+            kind=ItemKind.URL,
+            source_ref=f"https://example.invalid/bulk{i:03d}",
+            source_key=f"bulk-{i:03d}",
+            title=f"Bulk Item {i:03d}",
+        )
 
 
 def test_dashboard_shows_one_card_per_target_including_unmanaged(seeded):
@@ -16,6 +33,29 @@ def test_dashboard_shows_one_card_per_target_including_unmanaged(seeded):
     for name in ["Green Tonie", "Blue Tonie", "Red Tonie", "Spare Tonie"]:
         assert name in html
     assert "Unmanaged" in html and "no library assigned" in html
+
+
+def test_pinned_assignment_shows_pinned_not_just_rotating_checked(seeded, store):
+    """Verified in a browser: pin an item, click Set pin, and the card still
+    shows "Rotating" checked -- pinning freezes the cursor
+    (`choose_next`/`rotation.py` sets `rotates=False`) but the only signal
+    on the card was the Rotating toggle, which stayed checked because
+    pinning never touches `assignment.enabled`. Someone pins a story, sees
+    Rotating still ticked, and reasonably concludes the pin didn't take.
+    PINNED must appear as its own visible state (not just leave "Rotating"
+    to imply the opposite of what actually happened), and it must not be
+    reported as plain "OK" -- a pin is deliberate, not unhealthy, but it is
+    still a real, distinct fact about the tonie.
+    """
+    a = next(a for a in store.assignments.list() if a.target_name == "Green Tonie")
+    item = store.items.list(a.library_id)[0]
+    store.assignments.set_pin(a.id, item.id)
+
+    html = seeded.get("/").text
+    card_html = html[html.index("Green Tonie"):]
+    card_html = card_html[: card_html.index("</article>")] if "</article>" in card_html else card_html
+    assert "PINNED" in card_html.upper()
+    assert "Rotating" in card_html  # still its own, separate control
 
 
 def test_degraded_is_unmissable_with_repair_action(seeded):
@@ -87,6 +127,70 @@ def test_pin_toggle_round_trips(seeded, store):
     assert store.assignments.get(aid).pinned_item_id == item.id
     seeded.post(f"/assignments/{aid}/pin", data={"item_id": ""})
     assert store.assignments.get(aid).pinned_item_id is None
+
+
+def test_small_library_pin_picker_is_still_a_plain_select(seeded, store):
+    """Below PIN_SEARCH_THRESHOLD (== library.py's PAGE_SIZE), today's
+    plain `<select>` must render exactly as before -- small libraries are
+    well served by it and must not regress."""
+    aid = _first_managed(store)
+    html = seeded.get("/").text
+    assert f'id="pin-{aid}"' in html
+    assert f'id="pin-search-q-{aid}"' not in html
+
+
+def test_large_library_pin_picker_uses_search_not_a_full_dump(seeded, store):
+    """Measured on the real bug: a 250-item library produced 251 <option>
+    tags and 35 KB of dashboard HTML; 838 items produced 839 options and
+    108 KB, per managed tonie. At/above the threshold the dashboard must
+    stop building `pin_options` from every item in the library and must
+    not render them all into the page -- assert the actual bug (the
+    per-card option/row count), not just that some other markup exists.
+    """
+    aid = _first_managed(store)
+    a = store.assignments.get(aid)
+    _bulk_up_library(store, a.library_id, PAGE_SIZE + 10)
+
+    html = seeded.get("/").text
+    assert f'id="pin-{aid}"' not in html  # plain <select> is gone for this card
+    assert f'id="pin-search-q-{aid}"' in html  # search widget is here instead
+
+    # The actual bug: nothing on the page-load response may enumerate
+    # every item in this (now 60+-item) library as an <option>.
+    assert html.count('value="bulk-') < PAGE_SIZE
+    assert "Bulk Item 059" not in html  # nothing near the tail is dumped either
+
+
+def test_pin_options_endpoint_caps_results_and_says_when_there_are_more(seeded, store):
+    aid = _first_managed(store)
+    a = store.assignments.get(aid)
+    _bulk_up_library(store, a.library_id, PAGE_SIZE + 10)
+
+    r = seeded.get(f"/assignments/{aid}/pin-options", params={"q": "Bulk"}, headers={"HX-Request": "true"})
+    assert r.status_code == 200
+    body = r.text
+    assert body.count("bulk-") <= PAGE_SIZE
+    assert str(PAGE_SIZE + 10) not in body or "more" in body.lower() or "first" in body.lower()
+
+
+def test_pin_options_endpoint_filters_by_title(seeded, store):
+    aid = _first_managed(store)
+    a = store.assignments.get(aid)
+    _bulk_up_library(store, a.library_id, PAGE_SIZE + 10)
+
+    r = seeded.get(f"/assignments/{aid}/pin-options", params={"q": "Bulk Item 007"}, headers={"HX-Request": "true"})
+    assert "Bulk Item 007" in r.text
+    assert "Bulk Item 008" not in r.text
+
+
+def test_pin_options_endpoint_can_set_the_pin(seeded, store):
+    aid = _first_managed(store)
+    a = store.assignments.get(aid)
+    _bulk_up_library(store, a.library_id, PAGE_SIZE + 10)
+    item = next(i for i in store.items.list(a.library_id) if i.title == "Bulk Item 007")
+
+    seeded.post(f"/assignments/{aid}/pin", data={"item_id": item.id})
+    assert store.assignments.get(aid).pinned_item_id == item.id
 
 
 def test_assign_library_to_unmanaged(seeded, store):

@@ -126,6 +126,35 @@ def natural_key(name: str) -> tuple:
     )
 
 
+def _probe_once(path: Path, probe: "Callable[[Path], ProbeResult] | None") -> "ProbeResult | None":
+    """Probe `path` at most once, `None` on no-probe-given or any probe
+    failure (corrupt/unreadable header) -- never lets a probe exception
+    abort the scan. Callers derive *both* title and duration from this one
+    result rather than each calling `probe()` separately, so a new file
+    costs one ffprobe invocation during a scan, not two."""
+    if probe is None:
+        return None
+    try:
+        return probe(path)
+    except Exception:
+        return None
+
+
+def _title_and_seconds(path: Path, probe_result: "ProbeResult | None") -> tuple[str, float | None]:
+    """Title (embedded tag first, filename stem fallback — mirrors
+    `title_for`'s own rule) and duration from one already-taken probe
+    result. `seconds` is `None`, never `0.0`, when there is no usable
+    result: a folder item shipping with a false "0 seconds" would read as
+    "this item is 0 minutes long" instead of "we don't know" -- the same
+    "unknown recorded as a definite value" bug shape this codebase has
+    shipped a dozen times before (see `ffmpeg.py::probe`'s identical
+    guard)."""
+    tag_title = probe_result.tags.get("title") if probe_result is not None else None
+    title = sanitise_title(tag_title) if tag_title else sanitise_title(path.stem)
+    seconds = probe_result.seconds if probe_result is not None else None
+    return title, seconds
+
+
 def title_for(path: Path, probe: "Callable[[Path], ProbeResult] | None") -> str:
     """Embedded tag title first, filename stem as fallback — both
     sanitised. Any probe failure (unreadable/absent tags, no probe given)
@@ -242,13 +271,15 @@ def scan_folder(store, library, root: Path, probe: "Callable[[Path], ProbeResult
                     root, existing.local_path, new_local, key, disambiguated,
                 )
                 relpath = path.relative_to(root)
-                title = title_for(path, probe)
+                probe_result = _probe_once(path, probe)
+                title, seconds = _title_and_seconds(path, probe_result)
                 store.items.add(
                     library.id,
                     ItemKind.FOLDER_FILE,
                     str(relpath),
                     disambiguated,
                     title,
+                    seconds=seconds,
                     local_path=new_local,
                 )
                 seen_keys.add(disambiguated)
@@ -264,13 +295,15 @@ def scan_folder(store, library, root: Path, probe: "Callable[[Path], ProbeResult
 
         if existing is None:
             relpath = path.relative_to(root)
-            title = title_for(path, probe)
+            probe_result = _probe_once(path, probe)
+            title, seconds = _title_and_seconds(path, probe_result)
             store.items.add(
                 library.id,
                 ItemKind.FOLDER_FILE,
                 str(relpath),
                 key,
                 title,
+                seconds=seconds,
                 local_path=new_local,
             )
             added += 1
