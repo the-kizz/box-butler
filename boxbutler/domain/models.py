@@ -69,10 +69,20 @@ class RenditionMode(StrEnum):
 
 @dataclass(frozen=True)
 class Library:
+    """A library is exactly one folder on disk.
+
+    `folder_path` is a `str`, not `str | None`: sources are only *how*
+    media arrives in the folder, so there is no such thing as a library
+    without one any more (see `boxbutler/sources/library_folder.py`). The
+    empty string is the one transient exception — a row written before
+    that rule existed, which `ensure_library_folders` gives a real folder
+    at the next startup — and never a state any code path may create.
+    """
+
     id: str
     name: str
     mode: LibraryMode = LibraryMode.SINGLE
-    folder_path: str | None = None
+    folder_path: str = ""
     created_at: datetime | None = None
 
 

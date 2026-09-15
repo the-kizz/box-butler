@@ -96,6 +96,11 @@ from boxbutler.sinks.tonies_cloud import ToniesCloudSink
 from boxbutler.sources.direct_url import DirectUrlSource
 from boxbutler.sources.folder import scan_folder as _scan_folder_dir
 from boxbutler.sources.folder import sync_media_root as _sync_media_root_dir
+from boxbutler.sources.library_folder import (
+    LibraryFolderError,
+    ensure_library_folders,
+    require_media_root,
+)
 from boxbutler.sources.ingest import Ingestor
 from boxbutler.sources.rss import RssSource
 from boxbutler.sources.upload import UploadSource
@@ -274,14 +279,16 @@ class OrchestratorRunner:
         folder-backed libraries before *every* run (manual or
         scheduled — both call this through `_run_locked`, the single
         place they share, so one hook covers both halves of "scanned on
-        a schedule and before each run"). `media_root=None` (operator
-        disabled the feature) skips this entirely. A scan failure must never block
+        a schedule and before each run"). A scan failure must never block
         the run itself -- last night's plan/staged tonie is still valid
         even if tonight's filesystem read glitched -- so this logs and
         swallows rather than propagating.
         """
         media_root = self.deps.config.media_root if self.deps.config else None
         if media_root is None:
+            # Only reachable from a hand-built `AppDeps` with no `config`
+            # (tests). `build()` has already refused to start without a
+            # usable media root on every real path.
             return
         try:
             _sync_media_root_dir(
@@ -559,7 +566,25 @@ def build(settings: Settings) -> AppDeps:
     wires every fetcher/renderer/notifier, and returns one `AppDeps` that
     `create_web_app`/`boxbutler.cli.main` both drive.
     """
+    # `/media` is required, not optional, and checked before anything
+    # else is opened (spec: a library is a folder). There is deliberately
+    # no fallback into `data_dir`: that is the volume the operator backs
+    # up, and library folders hold hours of audio. Plex, Sonarr, Immich
+    # and Paperless all refuse to start without their media location for
+    # the same reason.
+    try:
+        media_root = require_media_root(settings.media_root)
+    except LibraryFolderError as exc:
+        raise ConfigError(str(exc)) from exc
+
     store = Store.open(Path(settings.data_dir) / "boxbutler.sqlite")
+    # Migration (see `ensure_library_folders`): a library written before
+    # "a library is a folder" has no folder_path. Give it one derived
+    # from its name and create it. Moves no audio — anything already
+    # fetched into `/cache` stays there and ages out by ordinary
+    # eviction, because a migration that relocates audio can lose it.
+    for lib in ensure_library_folders(store, media_root):
+        logger.info("migrated library %r to a folder under %s", lib.name, media_root)
     # First start only (spec §1.1b): after this, the database owns these
     # keys and an operator's Settings-screen edit is never overwritten by
     # a redeploy with the same env/YAML.
@@ -745,15 +770,32 @@ def create_web_app(deps: AppDeps) -> FastAPI:
         DirectUrlSource(http_client),
         UploadSource(upload_dir),
     ]
-    ingestor = Ingestor(deps.store, sources)
+    # A source is how media arrives in the library's folder, so the
+    # ingestor needs a fetcher: adding a link downloads the audio into
+    # that folder there and then (`boxbutler/sources/ingest.py`). It
+    # fetches into a private staging directory under `/cache` first and
+    # only then adopts the finished file into the library folder, so a
+    # partial download is never visible in a folder the operator is
+    # looking at. Same `CompositeFetcher` the orchestrator uses — one
+    # download path, not a second implementation.
+    ingestor = Ingestor(
+        deps.store,
+        sources,
+        fetcher=deps.orchestrator.deps.fetcher,
+        staging_dir=Path(deps.cache_dir) / "incoming",
+    )
 
     def scan_folder(library) -> int:
         # Real folder scan (deferred wiring item 4's third placeholder).
-        # A library with no `folder_path` configured has nothing to scan
-        # yet — matches `default_scan_folder`'s "always zero" contract
-        # for that case rather than raising. `probe=renderer.probe` so
-        # titles come from embedded tags first (folder.py's own
-        # preference), filename stem only as its fallback.
+        # Called by the Scan button *and* on every library page view (see
+        # `web/routes/library.py::_scan_on_open`), so that a file copied
+        # in by hand is simply listed rather than needing a click. A
+        # library with no `folder_path` (a row that predates the startup
+        # migration) has nothing to scan yet — matches
+        # `default_scan_folder`'s "always zero" contract for that case
+        # rather than raising. `probe=renderer.probe` so titles come from
+        # embedded tags first (folder.py's own preference), filename stem
+        # only as its fallback.
         if not library.folder_path:
             return 0
         result = _scan_folder_dir(
@@ -771,6 +813,7 @@ def create_web_app(deps: AppDeps) -> FastAPI:
         ingest=ingestor.add_ref,
         ingest_upload=ingestor.add_upload,
         scan_folder=scan_folder,
+        media_root=Path(config.media_root),
     )
     _mount_metrics(app, deps)
     return app

@@ -22,7 +22,11 @@
 # Optional overrides (env beats this file for every setting, not just secrets):
 #   BOXBUTLER_DATA_DIR         - where the SQLite store and snapshots live (default /data)
 #   BOXBUTLER_CACHE_DIR        - where fetched/rendered audio is cached (default /cache)
-#   BOXBUTLER_MEDIA_ROOT       - read-only mount for folder-backed libraries (default /media)
+#   BOXBUTLER_MEDIA_ROOT       - REQUIRED read-write mount holding every library folder
+#                                (default /media). A library is exactly one folder under it,
+#                                and adding a source downloads into that folder. Box Butler
+#                                refuses to start without it -- there is no fallback into
+#                                the data directory, which is the volume you back up.
 #   BOXBUTLER_CONFIG           - path to this file (default: none; env-only + defaults)
 #   BOXBUTLER_SINK_KIND        - "tonies_cloud" (default) or "fake" (smoke-testing only)
 #   TZ                         - fallback timezone if "timezone" below is unset

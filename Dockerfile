@@ -29,6 +29,12 @@ COPY --from=css /src/boxbutler/web/static/app.css ./boxbutler/web/static/app.css
 RUN pip install --no-cache-dir . && useradd -u 1000 -m boxbutler
 
 ENV BOXBUTLER_DATA_DIR=/data BOXBUTLER_CACHE_DIR=/cache BOXBUTLER_MEDIA_ROOT=/media PYTHONUNBUFFERED=1
+# /media is deliberately not a VOLUME: it is a required bind mount of the
+# operator's own audio library (see compose/box-butler.yml), and declaring
+# it here would make Docker invent an anonymous volume for it when the
+# operator forgets the mount — turning "you haven't mounted /media" into
+# "downloads vanish into a volume nobody can find". Better to fail at
+# startup naming the missing mount.
 VOLUME ["/data", "/cache"]
 EXPOSE 8410
 
@@ -36,7 +42,8 @@ HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
     CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8410/healthz').status==200 else 1)"
 
 # Entrypoint fixes up ownership of bind-mounted /data and /cache before
-# dropping privileges: an operator bind-mounting a fresh or re-owned host
+# dropping privileges (never /media — see docker-entrypoint.sh for why the
+# operator's own media library is not ours to re-own): an operator bind-mounting a fresh or re-owned host
 # directory onto /data or /cache is the single most common first-run
 # failure for self-hosted containers (permission denied writing SQLite/
 # audio as uid 1000). We start as root just long enough to chown, then

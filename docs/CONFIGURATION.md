@@ -18,7 +18,7 @@ placed in `config.yml` for one of these is silently ignored rather than accident
 | `BOXBUTLER_NOTIFY_TOKEN` | no | Bearer token for the notification server, if it needs one |
 | `BOXBUTLER_DATA_DIR` | no | SQLite store + snapshots (default `/data`) |
 | `BOXBUTLER_CACHE_DIR` | no | Fetched/rendered audio cache (default `/cache`) |
-| `BOXBUTLER_MEDIA_ROOT` | no | Read-only mount for folder-backed libraries (default `/media`) |
+| `BOXBUTLER_MEDIA_ROOT` | **yes** (as a mount) | Read-write mount holding every library folder (default `/media`). A library *is* a folder under it and adding a source downloads into that folder, so startup fails — naming the mount — if it is missing or unwritable. There is deliberately no fallback into the data directory |
 | `BOXBUTLER_CONFIG` | no | Path to a `config.yml` (default: none — env + defaults only) |
 | `BOXBUTLER_SINK_KIND` | no | `tonies_cloud` (default) or `fake` (smoke-testing only) |
 | `TZ` | no | Fallback timezone if `timezone` isn't set in `config.yml` |

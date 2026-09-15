@@ -78,11 +78,20 @@ class LibraryRepo:
             id=r["id"],
             name=r["name"],
             mode=LibraryMode(r["mode"]),
-            folder_path=r["folder_path"],
+            # NULL only for a row written before "a library is a folder"
+            # (see `Library`): normalised to "" here so nothing downstream
+            # has to handle two spellings of "no folder", and fixed for
+            # real by `ensure_library_folders` at the next startup.
+            folder_path=r["folder_path"] or "",
             created_at=_parse_dt(r["created_at"]),
         )
 
     def create(self, name: str, mode: LibraryMode = LibraryMode.SINGLE, folder_path: str | None = None) -> Library:
+        """Every production caller supplies `folder_path` — a library is a
+        folder (see `boxbutler/sources/library_folder.py`). It stays
+        defaulted here rather than becoming a required argument so that a
+        store-layer test can still make a bare row; `ensure_library_folders`
+        is what guarantees a *running* install has none."""
         id_ = _new_id()
         created_at = _now_iso()
         self._conn.execute(

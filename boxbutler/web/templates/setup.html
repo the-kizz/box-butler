@@ -20,7 +20,7 @@
         {% if step > 1 %}{{ icon("check-circle", "setup-step-icon") }}{% endif %}1. Tonie account</li>
       <li class="setup-step {% if step == 2 %}setup-step-current{% elif step > 2 %}setup-step-done{% endif %}"
           {% if step == 2 %}aria-current="step"{% endif %}>
-        {% if step > 2 %}{{ icon("check-circle", "setup-step-icon") }}{% endif %}2. Library and source</li>
+        {% if step > 2 %}{{ icon("check-circle", "setup-step-icon") }}{% endif %}2. Library folder (optional)</li>
       <li class="setup-step {% if step == 3 %}setup-step-current{% endif %}"
           {% if step == 3 %}aria-current="step"{% endif %}>3. Choose tonies</li>
     </ol>
@@ -75,20 +75,49 @@
          the admin password, which is never put in markup. #}
       {% for tid in ticked %}<input type="hidden" name="target_ids" value="{{ tid }}">{% endfor %}
       <input type="hidden" name="admin_username" value="{{ admin_username }}">
-      <p class="setup-intro">Signed in as <strong>{{ tonie_username }}</strong>. Create your first
-        library and add one source to it — you can add more later from the library screen.</p>
+      {# A library is exactly one folder. Watch a folder, paste a link
+         (which downloads into that folder), or skip — and skipping is the
+         default the moment a library already exists, because no step may
+         be mandatory when the thing it creates is already there. #}
+      <p class="setup-intro">Signed in as <strong>{{ tonie_username }}</strong>.
+        {% if existing_libraries %}
+        You already have {{ existing_libraries | length }}
+        librar{{ "ies" if existing_libraries | length != 1 else "y" }}, so you can skip this
+        step entirely.
+        {% else %}
+        Create your first library — it's one folder{% if media_root %} under
+        <code>{{ media_root }}</code>{% endif %}. You can add more later from the library screen.
+        {% endif %}
+      </p>
 
       <label for="library_name">Library name</label>
-      <input id="library_name" name="library_name" type="text" value="{{ library_name }}" required>
+      <input id="library_name" name="library_name" type="text" value="{{ library_name }}">
 
-      <label for="source_ref">Source (a video, playlist, RSS feed or audio URL)</label>
+      <fieldset class="setup-folder">
+        <legend>Folder</legend>
+        <span class="field-hint">Leave this alone to create a folder named after the library.
+          Anything you add to it — a link, a feed, an upload — is downloaded into this folder.</span>
+        <div hx-get="/libraries/folders" hx-trigger="load" hx-swap="outerHTML">
+          <input type="hidden" name="folder_path" value="{{ folder_path }}">
+        </div>
+      </fieldset>
+
+      <label for="source_ref">Source (a video, playlist, RSS feed or audio URL) — optional</label>
       <input id="source_ref" name="source_ref" type="text" value="{{ source_ref }}"
-             autocomplete="off" required>
-      <span class="field-hint">Paste a link. You can drag files or scan a folder later instead.</span>
+             autocomplete="off">
+      <span class="field-hint">Paste a link and it's downloaded into the folder above. Or leave it
+        empty and just watch the folder.</span>
 
       <div class="setup-actions">
         <button type="submit" name="action" value="back" class="btn btn-secondary">Back</button>
-        <button type="submit" class="btn btn-primary setup-next">Continue</button>
+        <button type="submit" name="action" value="skip"
+                class="btn {{ "btn-primary" if skip_default else "btn-secondary" }} setup-skip">
+          Skip for now
+        </button>
+        <button type="submit" name="action" value="next"
+                class="btn {{ "btn-secondary" if skip_default else "btn-primary" }} setup-next">
+          Continue
+        </button>
       </div>
     </form>
     {% elif step == 3 %}
@@ -96,11 +125,19 @@
       <input type="hidden" name="step" value="3">
       <input type="hidden" name="tonie_username" value="{{ tonie_username }}">
       <input type="hidden" name="library_name" value="{{ library_name }}">
+      <input type="hidden" name="folder_path" value="{{ folder_path }}">
       <input type="hidden" name="source_ref" value="{{ source_ref }}">
+      {% if skip %}<input type="hidden" name="skip" value="1">{% endif %}
 
       <p class="setup-intro">
-        Tick which of your tonies "<strong>{{ library_name }}</strong>" should feed. Leave a tonie
-        unticked to leave it untouched — nothing is ever assigned without an explicit tick.
+        {% if skip %}
+        Tick which of your tonies Box Butler should manage. You skipped creating a library, so
+        they'll sit here unassigned until you point one at a library yourself.
+        {% else %}
+        Tick which of your tonies "<strong>{{ library_name }}</strong>" should feed.
+        {% endif %}
+        Leave a tonie unticked to leave it untouched — nothing is ever assigned without an
+        explicit tick.
       </p>
 
       {% if targets %}

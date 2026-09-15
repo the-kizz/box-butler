@@ -39,8 +39,17 @@ def sink():
 
 
 @pytest.fixture
-def app(store, sink, settings):
-    return create_app(store, sink, settings, FakeRunner(store, sink))
+def media_root(tmp_path):
+    """Every library is a folder now, so the wizard needs somewhere to put
+    one — `/media` is required, not optional."""
+    root = tmp_path / "media"
+    root.mkdir(exist_ok=True)
+    return root
+
+
+@pytest.fixture
+def app(store, sink, settings, media_root):
+    return create_app(store, sink, settings, FakeRunner(store, sink), media_root=media_root)
 
 
 @pytest.fixture

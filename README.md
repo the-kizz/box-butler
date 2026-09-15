@@ -78,7 +78,7 @@ services:
     volumes:
       - ./data:/data                # SQLite + snapshots — the bit worth backing up
       - ./cache:/cache              # downloaded audio — large, rebuilds itself
-      - /path/to/media:/media:ro    # optional: your own audio, read-only
+      - /path/to/media:/media       # required: your own audio — read-write, see below
 ```
 
 **`.env`** beside it — two values are all you need:
@@ -99,9 +99,32 @@ docker run -d --name box-butler -p 8410:8410 \
   -e TZ=Australia/Melbourne \
   -e BOXBUTLER_SINK_USER=you@example.com \
   -e BOXBUTLER_SINK_PASSWORD=your-tonies-password \
-  -v "$PWD/data:/data" -v "$PWD/cache:/cache" \
+  -v "$PWD/data:/data" -v "$PWD/cache:/cache" -v "$PWD/media:/media" \
   ghcr.io/the-kizz/box-butler:0.1.2
 ```
+
+### About `/media`
+
+**A library is exactly one folder.** Like Plex and the \*arr stack, Box Butler's libraries are
+directories: content arrives in them however you like, and the app reads what is there. Adding a
+YouTube link, a playlist, a podcast feed or an upload *downloads the audio into that folder* — after
+which it is an ordinary file, indistinguishable from one you copied in yourself.
+
+That means `/media` is mounted read-write, so it is worth being precise about what Box Butler will
+and will not do in there:
+
+- It **only ever creates new files.**
+- It **never modifies, renames, moves, truncates or deletes a file it did not create.**
+- A filename collision picks a **different name** — never an overwrite.
+- Removing an item from a library removes the database row. The file on disk is deleted only if you
+  explicitly tick "and delete the file".
+- Retention/eviction only ever prunes `/cache`. No cache budget can shrink a library folder.
+- `/media` is **not** chowned on startup — it is your media, not the app's. Set `PUID`/`PGID` to a
+  uid that can already write to it.
+
+Box Butler refuses to start if `/media` is missing or unwritable, naming the mount. There is
+deliberately no fallback into `/data`: that is the volume you back up, and libraries hold hours of
+audio.
 
 Then open `http://localhost:8410`, finish the three-step wizard, add a library and assign it to a
 tonie. Nothing touches a tonie until you ask: `boxbutler run` prints the plan and exits,
@@ -123,7 +146,7 @@ Credentials come from environment variables only — never from a config file, s
 | `TZ` | no | Your timezone. Don't leave it at UTC — see the notes |
 | `BOXBUTLER_DATA_DIR` | no | Default `/data` |
 | `BOXBUTLER_CACHE_DIR` | no | Default `/cache` |
-| `BOXBUTLER_MEDIA_ROOT` | no | Default `/media`, read-only |
+| `BOXBUTLER_MEDIA_ROOT` | **yes** (as a mount) | Default `/media`. Every library is one folder under it, so Box Butler refuses to start without it — and it is read-write |
 
 Everything else — schedule, duration cap, cache budget, prefetch depth, duplicate rules,
 notifications — lives in `config.yml` or the Settings screen and applies on the next run, no restart.

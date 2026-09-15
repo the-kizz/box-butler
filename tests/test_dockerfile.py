@@ -124,9 +124,18 @@ def test_entrypoint_honours_puid_pgid_not_a_hardcoded_uid():
 
 
 def test_media_is_never_a_chown_target():
-    """/media is mounted read-only (compose/box-butler.yml). Chowning a
-    read-only bind mount fails and would break startup for every operator
-    using /media, so it must never appear as a chown target."""
+    """/media is read-write now, and Box Butler does write to it — and it
+    still must never be chowned.
+
+    /data and /cache are the app's own volumes, so taking ownership of
+    them is repair. /media is the operator's audio library, very likely
+    shared with Plex/Jellyfin/an *arr stack and plausibly terabytes of it.
+    Rewriting its ownership to suit us is exactly the "modifies what it
+    did not create" behaviour the rest of this change forbids, and it
+    would cost minutes to hours on every restart. The app names the
+    problem at startup instead (`require_media_root`), which is the same
+    bargain Plex and Sonarr strike.
+    """
     entry = Path("docker-entrypoint.sh").read_text()
     for line in entry.splitlines():
         stripped = line.strip()
@@ -134,6 +143,38 @@ def test_media_is_never_a_chown_target():
             continue
         if "chown" in stripped:
             assert "/media" not in stripped
+    # And the loop that does the chowning must not have grown /media
+    # either -- a check that only reads `chown` lines would miss
+    # `for dir in /data /cache /media`.
+    for line in entry.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            continue
+        if stripped.startswith("for ") and "/data" in stripped:
+            assert "/media" not in stripped, (
+                "/media must not be in the entrypoint's chown loop"
+            )
+
+
+def test_media_mount_is_read_write_and_documented_as_required():
+    """The `:ro` flag is gone, because downloads land in library folders.
+    The example compose file has to say both halves out loud: that the
+    mount is required, and that the app only ever creates files in it."""
+    c = Path("compose/box-butler.yml").read_text()
+    assert ":/media:ro" not in c, "/media can no longer be mounted read-only"
+    assert ":/media" in c
+    assert "required" in c.lower()
+
+
+def test_the_app_refuses_to_start_without_a_media_root():
+    """`/media` is required, not optional, and there is deliberately no
+    fallback into /data (the volume the operator backs up). This asserts
+    the check exists and is reached from the composition root, not merely
+    that a helpful comment was written somewhere."""
+    main = Path("boxbutler/main.py").read_text()
+    assert "require_media_root" in main
+    lf = Path("boxbutler/sources/library_folder.py").read_text()
+    assert "def require_media_root" in lf
 
 
 def test_cache_chown_is_conditional_not_unconditional():
@@ -191,7 +232,7 @@ def test_compose_fragment_is_portable_and_neutral():
         "8410:8410",
         "./data:/data",
         ":/cache",
-        ":/media:ro",
+        ":/media",
         "restart: unless-stopped",
         "env_file: .env",
     ]:

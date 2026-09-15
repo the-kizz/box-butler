@@ -45,8 +45,32 @@ for dir in /data /cache; do
     fi
 done
 
-# /media is intentionally never chowned here: it is mounted read-only
-# (see compose/box-butler.yml) and chowning a read-only mount fails,
-# which would break startup for every operator using /media.
+# /media is intentionally never chowned here, even though it is now
+# mounted read-write and Box Butler does write to it.
+#
+# /data and /cache are the app's own volumes: it created everything in
+# them, so taking ownership is repair. /media is the exact opposite — it
+# is the operator's audio library, very likely shared with Plex, Jellyfin,
+# an *arr stack and whatever else the household runs, and plausibly
+# terabytes of it. A recursive chown there would rewrite the ownership of
+# every file the operator owns to suit us, which is precisely the
+# "modifies what it did not create" behaviour the rest of this change
+# exists to forbid, and would also take minutes to hours on every single
+# restart.
+#
+# A *shallow* chown of just the top-level directory was considered and
+# rejected too: it silently changes something the operator set
+# deliberately, and it does not even solve the problem (the app also has
+# to write inside per-library subfolders, which it would not have
+# touched).
+#
+# So ownership of /media stays the operator's business, and Box Butler
+# names the problem instead of papering over it: `require_media_root`
+# (boxbutler/sources/library_folder.py) checks at startup that /media is
+# mounted and writable by this uid, and refuses to start with a message
+# telling the operator to drop `:ro` and set PUID/PGID to a uid that can
+# write to their media directory. That is the same bargain Plex, Sonarr
+# and Jellyfin strike, and it fails loudly instead of quietly mangling a
+# media library.
 
 exec gosu "${PUID}:${PGID}" "$@"

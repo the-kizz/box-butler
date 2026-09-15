@@ -45,7 +45,9 @@ brief specifies.
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import replace
+from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
@@ -54,8 +56,17 @@ from starlette.templating import Jinja2Templates
 
 from ...domain.fitting import DEFAULT_CAP_SECONDS, clamp_cap
 from ...domain.models import Library, LibraryMode
+from ...sources.library_folder import (
+    LibraryFolderError,
+    ensure_library_folder,
+    folder_name_for,
+    list_subfolders,
+    resolve_within,
+)
 from ...store.db import Store
 from ..auth import require_login
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -120,9 +131,87 @@ def create_library(
     folder_path: str = Form(""),
     user: str = Depends(require_login),
 ):
+    """A library is exactly one folder, so this route always produces one.
+
+    `folder_path` is a path *relative to the media root*, picked with the
+    folder picker below — never an absolute path, and never joined by
+    hand here: `resolve_within` is the single place a caller-supplied
+    path becomes a real one, and it refuses anything that would land
+    outside the root. An empty value means "a new folder named after the
+    library", which is what a first-time operator gets without having to
+    ssh in and `mkdir` (the picker browses *and* creates, Sonarr-style).
+    """
     store: Store = request.app.state.store
-    lib = store.libraries.create(name=name, mode=LibraryMode(mode), folder_path=folder_path or None)
+    media_root = _media_root(request)
+    if media_root is None:
+        return Response(status_code=503)
+    try:
+        if folder_path.strip():
+            folder = resolve_within(media_root, folder_path)
+            folder.mkdir(parents=True, exist_ok=True)
+        else:
+            folder = ensure_library_folder(media_root, name)
+    except (LibraryFolderError, OSError) as exc:
+        logger.warning("refused library folder %r: %s", folder_path, exc)
+        return _redirect_to_index(f"Couldn't use that folder: {exc}")
+    lib = store.libraries.create(name=name, mode=LibraryMode(mode), folder_path=str(folder))
     return RedirectResponse(url=f"/libraries/{lib.id}", status_code=303)
+
+
+def _media_root(request: Request) -> Path | None:
+    return getattr(request.app.state, "media_root", None)
+
+
+def _redirect_to_index(announce: str) -> RedirectResponse:
+    return RedirectResponse(url=f"/libraries?announce={quote(announce)}", status_code=303)
+
+
+@router.get("/libraries/folders")
+def browse_folders(
+    request: Request,
+    path: str = "",
+    name: str = "",
+    user: str = Depends(require_login),
+):
+    """The folder picker: the subfolders of `path` inside the media root,
+    plus the folder a library called `name` would get if it doesn't exist
+    yet.
+
+    Confined to the media root by `resolve_within`, which is what stops
+    `..`, an absolute path and a symlink pointing elsewhere alike (see
+    `tests/web/test_folder_picker.py`). A refusal is a 400 naming nothing
+    about the host beyond the root itself — there is no version of this
+    route that browses above it.
+    """
+    templates = _templates(request)
+    media_root = _media_root(request)
+    if media_root is None:
+        return Response(status_code=503)
+    try:
+        current = resolve_within(media_root, path)
+        folders = list_subfolders(media_root, path)
+    except LibraryFolderError as exc:
+        return Response(status_code=400, content=str(exc), media_type="text/plain")
+
+    root = Path(media_root).resolve()
+    rel = "" if current == root else str(current.relative_to(root))
+    parent = "" if rel == "" else str(Path(rel).parent) if str(Path(rel).parent) != "." else ""
+    suggested = ""
+    if name.strip():
+        suggested = folder_name_for(name)
+    return templates.TemplateResponse(
+        request,
+        "partials/folder_picker.html",
+        {
+            "media_root": str(root),
+            "current": rel,
+            "at_root": rel == "",
+            "parent": parent,
+            "folders": [(p.name, str(p.relative_to(root))) for p in folders],
+            "suggested": suggested,
+            "suggested_exists": bool(suggested) and (root / (f"{rel}/{suggested}" if rel else suggested)).is_dir(),
+        },
+    )
 
 
 @router.get("/libraries/{library_id}")
@@ -138,6 +227,8 @@ def library_detail(
     library = store.libraries.get(library_id)
     if library is None:
         return Response(status_code=404)
+
+    _scan_on_open(request, library)
 
     all_items = store.items.list(library_id)
     total = len(all_items)
@@ -175,6 +266,44 @@ def library_detail(
             "cap_seconds": cap_seconds,
         },
     )
+
+
+def _scan_on_open(request: Request, library: Library) -> None:
+    """Scan this library's folder before rendering it.
+
+    The gap this closes is the one the operator hit: copy a file into the
+    folder, open the library page, and it isn't listed until you press
+    Scan. `sync_media_root` already runs inside the run lock, so the
+    library is correct whenever it is actually *used* — this makes it
+    correct whenever it is *looked at* too.
+
+    Deliberately **not** a filesystem watcher. inotify does not work over
+    NFS or SMB (Plex documents this; its own automatic updates don't fire
+    on network shares, which is why third-party watchdogs exist for it),
+    and this operator's media may well be on an NFS mount. A watcher is
+    therefore the feature most likely to look like it works while
+    silently doing nothing — the exact failure shape this codebase spends
+    its life removing. Scanning on open works on every filesystem and
+    cannot fail quietly.
+
+    A scan is a read: nothing is written to the folder (see
+    `boxbutler/sources/folder.py`, and
+    `test_opening_a_library_page_writes_nothing_to_the_folder`). And it
+    must never stop the page rendering — an unreadable or unmounted
+    folder is already handled downstream as "mark the items unavailable,
+    keep every row", and anything else that goes wrong here is logged and
+    swallowed, exactly as `OrchestratorRunner._sync_media_root` does
+    before a run.
+    """
+    if not library.folder_path:
+        return
+    try:
+        request.app.state.scan_folder(library)
+    except Exception:
+        logger.exception(
+            "scan of %s on opening the library page failed; showing the "
+            "library as last recorded", library.folder_path,
+        )
 
 
 @router.post("/libraries/{library_id}/mode")
@@ -314,13 +443,61 @@ def delete_item(
     request: Request,
     library_id: str,
     item_id: str,
+    delete_file: str = Form(""),
     user: str = Depends(require_login),
 ):
+    """Remove the item. The file stays unless the operator explicitly
+    asked for it to go.
+
+    Since "a library is a folder", an item's audio is a real file the
+    operator can see, and some of those files they put there themselves.
+    The app's standing guarantee is that it never deletes a file it did
+    not create — the one exception being this explicit, confirmed choice
+    (`item_row.html`'s "and delete the file" checkbox, off by default).
+    So: removing an item removes the row; removing the file is a second,
+    separate decision that has to be made on purpose.
+
+    The path is checked to be inside this library's own folder before
+    anything is unlinked. A library folder is the only place this app may
+    delete from at all, and an item's `local_path` can point elsewhere
+    entirely (a cache copy left over from before the migration) — which
+    retention owns, not this route.
+    """
     store: Store = request.app.state.store
     item = store.items.get(item_id)
+    library = store.libraries.get(library_id)
+    removed_file = False
+    if item is not None and delete_file in ("1", "true", "on") and item.local_path and library:
+        removed_file = _delete_library_file(library, Path(item.local_path))
     store.items.delete(item_id)
-    phrase = f"Removed: {item.title}" if item else "Removed"
+    if item is None:
+        phrase = "Removed"
+    elif removed_file:
+        phrase = f"Removed: {item.title} (and deleted its file)"
+    else:
+        phrase = f"Removed: {item.title}"
     return _redirect(library_id, phrase)
+
+
+def _delete_library_file(library: Library, path: Path) -> bool:
+    """Unlink `path`, but only if it really is inside `library`'s own
+    folder. Returns whether it went."""
+    if not library.folder_path:
+        return False
+    try:
+        folder = Path(library.folder_path).resolve()
+        target = path.resolve()
+    except OSError:
+        return False
+    if folder not in target.parents:
+        logger.warning("refusing to delete %s: outside library folder %s", target, folder)
+        return False
+    try:
+        target.unlink()
+    except OSError:
+        logger.warning("could not delete %s", target, exc_info=True)
+        return False
+    return True
 
 
 @router.post("/libraries/{library_id}/scan")

@@ -21,6 +21,14 @@ from boxbutler.fetch.folder import FolderFetcher
 from boxbutler.fetch.protocol import ExtractionBroken, ItemUnavailable
 from boxbutler.main import build
 
+
+def _media_root(tmp_path):
+    """`/media` is required now (a library *is* a folder), so a built
+    process needs a real one -- exactly as a real install does."""
+    root = tmp_path / "media"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
 ENV = {
     "BOXBUTLER_SINK_USER": "u",
     "BOXBUTLER_SINK_PASSWORD": "p",
@@ -59,12 +67,15 @@ def test_composite_fetcher_from_build_resolves_a_folder_item(tmp_path):
         **ENV,
         "BOXBUTLER_DATA_DIR": str(tmp_path / "data"),
         "BOXBUTLER_CACHE_DIR": str(tmp_path / "cache"),
+        # `/media` is a required mount now -- a library is a folder
+        # under it, so `build()` refuses to start without one.
+        "BOXBUTLER_MEDIA_ROOT": str(_media_root(tmp_path)),
     })
     deps = build(settings)
     fetcher = deps.orchestrator.deps.fetcher
 
     media = tmp_path / "media"
-    media.mkdir()
+    media.mkdir(exist_ok=True)
     audio = media / "track.m4a"
     audio.write_bytes(b"fake-m4a-bytes")
 

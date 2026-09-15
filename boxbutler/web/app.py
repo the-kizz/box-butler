@@ -79,6 +79,7 @@ def create_app(
     ingest: Callable[..., list] | None = None,
     ingest_upload: Callable[..., object] | None = None,
     scan_folder: Callable[..., int] | None = None,
+    media_root: "Path | None" = None,
 ) -> FastAPI:
     app = FastAPI(title=APP_NAME)
 
@@ -110,6 +111,12 @@ def create_app(
         ingest_upload if ingest_upload is not None else partial(fake_ingest_upload, store)
     )
     app.state.scan_folder = scan_folder if scan_folder is not None else default_scan_folder
+    # The one directory library folders may live in. Every path the
+    # folder picker resolves is confined to it
+    # (`boxbutler/sources/library_folder.py::resolve_within`), and a new
+    # library's folder is created under it. `None` only for the Phase 2
+    # fake/dev wiring, which has no media mount and therefore no picker.
+    app.state.media_root = Path(media_root) if media_root is not None else None
 
     # "A run is already in progress" is the runner's answer, not the web
     # layer's, and it is now raised as a plain `RunInProgress` so that

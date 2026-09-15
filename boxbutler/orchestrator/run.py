@@ -1069,10 +1069,28 @@ class Orchestrator:
         return Staged(chapters=chapters, total_seconds=total, plan=plan)
 
     def _fetch(self, run_id: str, a: Assignment, item: Item) -> Path:
-        """FETCH. Idempotent by source key: an existing cached file is a hit."""
+        """FETCH. Idempotent by source key: an existing cached file is a hit.
+
+        A library is a folder, and `Ingestor` puts a source's audio in it
+        when the item is added — so for most items the bytes are already
+        sitting in the library folder at `item.local_path` and there is
+        nothing to fetch. That is a hit, not a special case: it is exactly
+        what `FolderFetcher` already does for a scanned file, generalised
+        to every kind now that every kind lands in the same place. If the
+        file is gone (the operator deleted it, or the item predates the
+        download-on-add path) this falls through to the fetcher, which
+        re-downloads it into the cache as before.
+        """
         store = self.deps.store
         prior = store.sources.get(item.id)
         cache_hit = prior is not None and Path(prior.cache_path).exists()
+        local = Path(item.local_path) if item.local_path else None
+        if local is not None and local.is_file():
+            now = self.deps.clock()
+            store.sources.record(item.id, local, now)
+            store.sources.touch(item.id, now)
+            self._event(run_id, E.FETCH, a, item_id=item.id, path=str(local), cache_hit=True)
+            return local
         try:
             src = self.deps.fetcher.fetch(item, self.deps.cache_dir)
         except ExtractionBroken as e:

@@ -19,9 +19,16 @@ from boxbutler.web.settings import WebSettings
 
 _tmp_dir = Path(tempfile.mkdtemp(prefix="boxbutler-dev-"))
 
+# A library is a folder, so even the screen-review app needs a media root
+# for the folder picker to have anything to browse. It is a throwaway
+# directory beside the throwaway database -- this module must never touch
+# a real media library.
+_media_root = _tmp_dir / "media"
+_media_root.mkdir(parents=True, exist_ok=True)
+
 _store = Store.open(_tmp_dir / "dev.sqlite")
 _sink = FakeSink()
-seed_fake(_store, _sink)
+seed_fake(_store, _sink, media_root=_media_root)
 
 _settings = WebSettings(
     secret_key="dev",
@@ -30,4 +37,4 @@ _settings = WebSettings(
     data_dir=_tmp_dir,
 )
 
-app = create_app(_store, _sink, _settings, FakeRunner(_store, _sink))
+app = create_app(_store, _sink, _settings, FakeRunner(_store, _sink), media_root=_media_root)

@@ -102,11 +102,22 @@ def test_delete_library_requires_confirm_token(seeded, store):
     assert r.status_code == 303 and store.libraries.get(lib.id) is None
 
 
-def test_scan_button_only_for_folder_libraries(seeded, store):
-    audiobook = _lib(store, "Audiobook")
-    bedtime = _lib(store)
-    assert "Scan folder" in seeded.get(f"/libraries/{audiobook.id}").text
-    assert "Scan folder" not in seeded.get(f"/libraries/{bedtime.id}").text
+def test_every_library_shows_its_folder_and_a_scan_button(seeded, store):
+    """This used to be `test_scan_button_only_for_folder_libraries`, and
+    it encoded the model this change removed: a library that might or
+    might not have a folder. A library *is* a folder now, so the folder
+    and its Scan button belong on every one of them.
+
+    The page has already scanned the folder before rendering (see
+    `routes/library.py::_scan_on_open`); the button stays for a
+    deliberate re-scan.
+    """
+    for name in ("Audiobook", "Bedtime", "Car Trips"):
+        lib = _lib(store, name)
+        assert lib.folder_path, f"{name} has no folder"
+        html = seeded.get(f"/libraries/{lib.id}").text
+        assert "Scan folder" in html
+        assert lib.folder_path in html
 
 
 # --- Additional coverage beyond the brief's sketch --------------------

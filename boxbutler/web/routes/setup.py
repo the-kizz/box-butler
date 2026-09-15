@@ -30,11 +30,19 @@ can never rotate.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
 from starlette.templating import Jinja2Templates
 
 from ...domain.models import LibraryMode
+from ...sources.library_folder import (
+    LibraryFolderError,
+    ensure_library_folder,
+    folder_name_for,
+    resolve_within,
+)
 from ...store.db import Store
 from ..auth import hash_password
 
@@ -53,12 +61,23 @@ def _configured(store: Store) -> bool:
 
 def _render(request: Request, step: int, **ctx):
     templates = _templates(request)
+    store: Store = request.app.state.store
+    existing = store.libraries.list()
     context = {
         "step": step,
         "error": None,
         "tonie_username": "",
         "library_name": "Bedtime",
+        "folder_path": "",
         "source_ref": "",
+        "skip": False,
+        # "No step may be mandatory when the thing it creates is already
+        # present": with a library already there, skipping is not merely
+        # allowed, it is the sensible default — so the template
+        # pre-selects it and says why.
+        "existing_libraries": existing,
+        "skip_default": bool(existing),
+        "media_root": str(getattr(request.app.state, "media_root", "") or ""),
         "targets": [],
         "ticked": set(),
         "admin_username": "",
@@ -105,7 +124,9 @@ async def setup_submit(request: Request):
             step=step - 1,
             tonie_username=form.get("tonie_username", ""),
             library_name=form.get("library_name", "Bedtime"),
+            folder_path=form.get("folder_path", ""),
             source_ref=form.get("source_ref", ""),
+            skip=form.get("skip") in ("1", "true", "on"),
             ticked=set(form.getlist("target_ids")) if step == 3 else set(),
             admin_username=(form.get("admin_username") or "") if step == 3 else "",
         )
@@ -138,9 +159,19 @@ def _handle_step1(request: Request, form, sink):
 
 
 def _handle_step2(request: Request, form, sink):
+    """Watch a folder / paste a link / skip.
+
+    This step used to demand *both* a library name and a link while its
+    own help text promised a folder option "later" — an operator with a
+    library that already existed could not get past it. Nothing here is
+    mandatory now except a name for a library actually being created, and
+    skipping is always available.
+    """
     tonie_username = form.get("tonie_username", "")
     library_name = (form.get("library_name") or "").strip()
+    folder_path = (form.get("folder_path") or "").strip()
     source_ref = (form.get("source_ref") or "").strip()
+    skip = form.get("action") == "skip" or form.get("skip") in ("1", "true", "on")
     # Round-trip carry (Important 2, review round 1): step 2's own form
     # carries these two along as hidden fields (setup.html) whenever step
     # 3 has already been filled in and the visitor came Back to fix
@@ -150,16 +181,27 @@ def _handle_step2(request: Request, form, sink):
     ticked = set(form.getlist("target_ids"))
     admin_username = form.get("admin_username", "")
 
-    if not library_name or not source_ref:
+    error = None
+    if not skip:
+        if not library_name:
+            error = "Name the library, or choose Skip — you can add one later."
+        else:
+            try:
+                _folder_for(request, library_name, folder_path, create=False)
+            except LibraryFolderError as exc:
+                error = f"Couldn't use that folder: {exc}"
+
+    if error is not None:
         return _render(
             request,
             step=2,
             tonie_username=tonie_username,
             library_name=library_name or "Bedtime",
+            folder_path=folder_path,
             source_ref=source_ref,
             ticked=ticked,
             admin_username=admin_username,
-            error="Enter a library name and one source (a link or feed) to continue.",
+            error=error,
         )
 
     # discovers-without-writing: list_targets() only, never clear/upload.
@@ -169,17 +211,46 @@ def _handle_step2(request: Request, form, sink):
         step=3,
         tonie_username=tonie_username,
         library_name=library_name,
+        folder_path=folder_path,
         source_ref=source_ref,
+        skip=skip,
         targets=targets,
         ticked=ticked,
         admin_username=admin_username,
     )
 
 
+def _folder_for(request: Request, library_name: str, folder_path: str, *, create: bool):
+    """Where this library's folder is, validating before step 3 rather
+    than discovering a bad path at the very end of the wizard.
+
+    A picked `folder_path` is relative to the media root and goes through
+    `resolve_within`, the one place a caller-supplied path becomes a real
+    one. An empty value means a new folder named after the library — the
+    picker browses *and* creates, so a new operator never has to ssh in
+    and `mkdir`.
+    """
+    media_root = getattr(request.app.state, "media_root", None)
+    if media_root is None:
+        raise LibraryFolderError(
+            "no media root is mounted, so there is nowhere for a library to live"
+        )
+    if folder_path:
+        folder = resolve_within(media_root, folder_path)
+        if create:
+            folder.mkdir(parents=True, exist_ok=True)
+        return folder
+    if create:
+        return ensure_library_folder(media_root, library_name)
+    return Path(media_root) / folder_name_for(library_name)
+
+
 def _handle_step3(request: Request, form, sink, store: Store):
     tonie_username = form.get("tonie_username", "")
     library_name = (form.get("library_name") or "Bedtime").strip()
+    folder_path = (form.get("folder_path") or "").strip()
     source_ref = (form.get("source_ref") or "").strip()
+    skip = form.get("skip") in ("1", "true", "on")
     admin_username = (form.get("admin_username") or "").strip()
     admin_password = form.get("admin_password") or ""
     admin_password_confirm = form.get("admin_password_confirm") or ""
@@ -203,14 +274,19 @@ def _handle_step3(request: Request, form, sink, store: Store):
             step=3,
             tonie_username=tonie_username,
             library_name=library_name,
+            folder_path=folder_path,
             source_ref=source_ref,
+            skip=skip,
             targets=targets,
             ticked=ticked,
             admin_username=admin_username,
             error=" ".join(errors),
         )
 
-    _finish(store, request, sink, library_name, source_ref, targets, ticked, admin_username, admin_password)
+    _finish(
+        store, request, sink, library_name, folder_path, source_ref, skip,
+        targets, ticked, admin_username, admin_password,
+    )
     return RedirectResponse(url="/", status_code=303)
 
 
@@ -219,16 +295,33 @@ def _finish(
     request: Request,
     sink,
     library_name: str,
+    folder_path: str,
     source_ref: str,
+    skip: bool,
     targets: list,
     ticked: set[str],
     admin_username: str,
     admin_password: str,
 ) -> None:
-    library = store.libraries.create(name=library_name, mode=LibraryMode.SINGLE)
-    if source_ref:
-        ingest = request.app.state.ingest
-        ingest(library.id, source_ref)
+    """Write the library, the item, the assignments and the admin account
+    — the only place in the wizard that touches the store.
+
+    `skip` means the operator chose not to create a library here, and that
+    is honoured literally: no library is invented for them, and a ticked
+    tonie gets its assignment row without one. Guessing that they "must
+    have meant" some existing library would be inventing an intent, and a
+    tonie that rotates something nobody chose is precisely the failure
+    this wizard was rewritten to avoid.
+    """
+    library = None
+    if not skip:
+        folder = _folder_for(request, library_name, folder_path, create=True)
+        library = store.libraries.create(
+            name=library_name, mode=LibraryMode.SINGLE, folder_path=str(folder)
+        )
+        if source_ref:
+            ingest = request.app.state.ingest
+            ingest(library.id, source_ref)
 
     # Keyed under `sink.name`, the live sink's own identity and the single
     # source of truth for it (`SinkProtocol.name`). This used to be a
@@ -240,7 +333,8 @@ def _finish(
     for target in targets:
         if target.id in ticked:
             assignment = store.assignments.upsert_target(sink.name, target.id, target.name)
-            store.assignments.assign_library(assignment.id, library.id)
+            if library is not None:
+                store.assignments.assign_library(assignment.id, library.id)
         # else: never a rotating tonie by default — no assignment row is
         # created here at all for a target nobody explicitly ticked.
 

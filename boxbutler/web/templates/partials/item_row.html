@@ -90,9 +90,20 @@
        hx-post/hx-boost here), so — same lesson as the dashboard's Apply
        button (Task 9, fix round 1, critical 1) — the guard has to be a
        real `onclick="return confirm(...)"`, not an inert attribute. #}
+    {# Removing the item removes the row. Deleting the *file* is a second,
+       separate decision — off by default, and never implied by Remove.
+       The app's standing guarantee is that it never deletes a file it did
+       not create; this checkbox is the one explicit exception, so it has
+       to be ticked on purpose and it says so in the confirmation. #}
     <form method="post" action="/libraries/{{ library.id }}/items/{{ item.id }}/delete" class="delete-item-form">
+      {% if item.local_path %}
+      <label class="toggle-label delete-file-toggle">
+        <input type="checkbox" name="delete_file" value="1">
+        and delete the file
+      </label>
+      {% endif %}
       <button type="submit" class="btn btn-destructive"
-              onclick="return confirm('Remove &quot;{{ item.title }}&quot; from {{ library.name }}? This cannot be undone.');">
+              onclick="return confirm('Remove &quot;{{ item.title }}&quot; from {{ library.name }}? This cannot be undone. The file on disk is only deleted if you ticked the box.');">
         Remove
       </button>
     </form>

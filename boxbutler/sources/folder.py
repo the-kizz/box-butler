@@ -7,13 +7,22 @@ however the household already moves them — SMB, NFS, `rsync`, a download
 client, dragging them from a laptop — and Box Butler neither knows nor
 cares. A scan just reflects what is on disk right now.
 
-**Ownership distinction (load-bearing):** an ingested item (Tasks 13/16)
-is *ours* — cached, owned, deletable. A folder item belongs to the
-filesystem; Box Butler only ever reads it. `scan_folder` must never write,
-move, rename, or delete anything under `root` — the mount is typically
-read-only (`/media:ro` in the container) and a scan of a `chmod`-ed
-read-only fixture directory is expected to succeed
-(`test_scan_against_read_only_media_root_succeeds`).
+**Ownership distinction (load-bearing):** `/media` is read-write now —
+`Ingestor` downloads a source's audio into the library folder — but a
+*scan* is still purely a read. `scan_folder` must never write, move,
+rename, or delete anything under `root`, and a scan of a `chmod`-ed
+read-only fixture directory is still expected to succeed
+(`test_scan_against_read_only_media_root_succeeds`): an operator who
+mounts their library read-only can still use Box Butler as a cataloguer,
+they just cannot add sources to it. The broader guarantee that replaced
+the read-only mount — the app only ever creates new files and never
+touches one it did not create — lives in
+`boxbutler/sources/library_folder.py` and is covered by
+`tests/test_media_is_append_only.py`.
+
+A file `Ingestor` downloaded into the folder is already an item of this
+library under its own kind (`YOUTUBE`, `RSS`, `UPLOAD`, ...). A scan skips
+it rather than adding a second, `FOLDER_FILE` item for the same audio.
 
 **Identity:** `source_key` is `fingerprint(path)` — the same
 `f"{size}-{sha1(head4MiB + tail4MiB)[:16]}"` scheme Task 16's
@@ -229,16 +238,32 @@ def scan_folder(store, library, root: Path, probe: "Callable[[Path], ProbeResult
     # re-diagnosed as a fresh collision against `key` every time (its raw
     # fingerprint never changes, but its item's key is the disambiguated
     # one, which `find_by_key(key)` would never find).
+    known_items = store.items.list(library.id)
     by_path = {
         item.local_path: item
-        for item in store.items.list(library.id)
+        for item in known_items
         if item.kind == ItemKind.FOLDER_FILE and item.local_path
+    }
+    # Files this library already owns under a *different* kind: a video,
+    # feed episode or upload that `Ingestor` downloaded into this folder
+    # (see `boxbutler/sources/ingest.py`). They are ordinary files now,
+    # so a scan walks straight over them -- but they are not new, and
+    # adding them again as `FOLDER_FILE` would give one piece of audio two
+    # items, two positions and two chances to be picked. Skipped by path,
+    # not by name, because a re-download under a collision-avoiding name
+    # is still recorded at the path the item points at.
+    ingested_paths = {
+        item.local_path
+        for item in known_items
+        if item.kind != ItemKind.FOLDER_FILE and item.local_path
     }
 
     seen_keys: set[str] = set()
     added = unchanged = renamed = restored = collisions = 0
 
     for path in files:
+        if str(path) in ingested_paths:
+            continue
         try:
             key = fingerprint(path)
         except OSError:

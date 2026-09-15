@@ -32,8 +32,18 @@ def sink():
 
 
 @pytest.fixture
-def app(store, sink, settings):
-    return create_app(store, sink, settings, FakeRunner(store, sink))
+def media_root(tmp_path):
+    """Every library is a folder now, and every folder lives under the
+    media root — so the web app always has one, exactly as a real install
+    does (`/media` is required, not optional)."""
+    root = tmp_path / "media"
+    root.mkdir(exist_ok=True)
+    return root
+
+
+@pytest.fixture
+def app(store, sink, settings, media_root):
+    return create_app(store, sink, settings, FakeRunner(store, sink), media_root=media_root)
 
 
 @pytest.fixture
@@ -49,6 +59,8 @@ def auth(client):
 
 
 @pytest.fixture
-def seeded(store, sink, auth):
-    seed_fake(store, sink)
+def seeded(store, sink, auth, media_root):
+    # Seeded libraries get real folders under the media root — every
+    # library is a folder now, and the library page scans its own on open.
+    seed_fake(store, sink, media_root=media_root)
     return auth

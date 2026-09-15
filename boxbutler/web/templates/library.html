@@ -28,9 +28,17 @@
   <noscript><button type="submit" class="btn btn-secondary">Set mode</button></noscript>
 </form>
 
+{# A library is exactly one folder, so it is stated on the page rather
+   than hidden behind a "folder library" distinction that no longer
+   exists. This page has already scanned the folder before rendering (see
+   routes/library.py::_scan_on_open), so a file copied in by hand is
+   already listed below — the button stays for a deliberate re-scan. #}
 {% if library.folder_path %}
 <form method="post" action="/libraries/{{ library.id }}/scan" class="scan-form">
   <span class="muted mono">{{ library.folder_path }}</span>
+  <span class="field-hint">Everything here lives in this folder. Anything you add — a link, a feed,
+    an upload — is downloaded into it, and files you copy in yourself are listed when you open this
+    page.</span>
   <button type="submit" class="btn btn-secondary">Scan folder</button>
 </form>
 {% endif %}

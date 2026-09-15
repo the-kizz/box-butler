@@ -2,6 +2,7 @@ import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from boxbutler.config import load_settings
@@ -16,7 +17,16 @@ ENV = {"BOXBUTLER_SINK_USER": "u", "BOXBUTLER_SINK_PASSWORD": "p", "BOXBUTLER_AD
 
 
 def _build(tmp_path, **extra_env):
-    s = load_settings(None, {**ENV, **extra_env, "BOXBUTLER_DATA_DIR": str(tmp_path / "data"), "BOXBUTLER_CACHE_DIR": str(tmp_path / "cache")})
+    # `/media` is required now (a library *is* a folder), so a built
+    # process needs a real one -- exactly as a real install does.
+    media_root = tmp_path / "media"
+    media_root.mkdir(parents=True, exist_ok=True)
+    s = load_settings(None, {
+        **ENV, **extra_env,
+        "BOXBUTLER_DATA_DIR": str(tmp_path / "data"),
+        "BOXBUTLER_CACHE_DIR": str(tmp_path / "cache"),
+        "BOXBUTLER_MEDIA_ROOT": str(media_root),
+    })
     return build(s)
 
 
@@ -293,3 +303,75 @@ def test_ingest_hooks_are_the_real_ingestor_not_the_fake(tmp_path):
     assert app.state.ingest.__func__.__qualname__ == "Ingestor.add_ref"
     assert app.state.ingest_upload.__self__.__class__ is Ingestor
     assert app.state.ingest_upload.__func__.__qualname__ == "Ingestor.add_upload"
+
+
+# ------------------------------------------------- `/media` is required
+
+
+def test_startup_fails_naming_the_missing_media_mount(tmp_path):
+    """A library *is* a folder, so there is nowhere for one to live
+    without `/media`. Startup fails with a message naming the missing
+    mount rather than falling back to a directory inside `/data` — that
+    would quietly put hours of audio in the volume the operator backs up.
+    Plex, Sonarr, Immich and Paperless all refuse the same way.
+    """
+    from boxbutler.config import ConfigError, load_settings
+    from boxbutler.main import build
+
+    missing = tmp_path / "not-mounted"
+    settings = load_settings(None, {
+        **ENV,
+        "BOXBUTLER_DATA_DIR": str(tmp_path / "data"),
+        "BOXBUTLER_CACHE_DIR": str(tmp_path / "cache"),
+        "BOXBUTLER_MEDIA_ROOT": str(missing),
+    })
+
+    with pytest.raises(ConfigError) as exc:
+        build(settings)
+
+    assert str(missing) in str(exc.value)
+    # No fallback was invented, anywhere.
+    assert not missing.exists()
+    assert not (tmp_path / "data" / "media").exists()
+
+
+def test_startup_gives_a_folderless_library_a_folder_without_moving_anything(tmp_path):
+    """Migration: a library written before "a library is a folder" gets
+    one derived from its name, created under the media root. Nothing is
+    moved — a migration that relocates audio can lose it, and a cached
+    copy ages out by ordinary eviction instead."""
+    from pathlib import Path
+
+    from boxbutler.config import load_settings
+    from boxbutler.main import build
+    from boxbutler.store.db import Store
+
+    media_root = tmp_path / "media"
+    media_root.mkdir()
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+
+    # A library with no folder, and an item already fetched into the cache.
+    store = Store.open(data_dir / "boxbutler.sqlite")
+    lib = store.libraries.create("Wombat Tales")
+    cached = cache_dir / "Story [vid1].m4a"
+    cached.write_bytes(b"already fetched")
+    store.items.add(lib.id, "youtube", "u/v1", "vid1", "Story", local_path=str(cached))
+    store.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+
+    settings = load_settings(None, {
+        **ENV,
+        "BOXBUTLER_DATA_DIR": str(data_dir),
+        "BOXBUTLER_CACHE_DIR": str(cache_dir),
+        "BOXBUTLER_MEDIA_ROOT": str(media_root),
+    })
+    deps = build(settings)
+
+    migrated = deps.store.libraries.get(lib.id)
+    assert migrated.folder_path == str(media_root / "Wombat Tales")
+    assert Path(migrated.folder_path).is_dir()
+    # Nothing moved: the cache copy is exactly where it was.
+    assert cached.read_bytes() == b"already fetched"
+    assert list(Path(migrated.folder_path).iterdir()) == []

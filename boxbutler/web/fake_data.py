@@ -75,7 +75,7 @@ def _add_item(store: Store, library_id: str, n: int, title: str, seconds: float,
     )
 
 
-def seed_fake(store: Store, sink: FakeSink) -> None:
+def seed_fake(store: Store, sink: FakeSink, media_root: Path | None = None) -> None:
     """Populate `store` and `sink` with obviously-fake dashboard data.
 
     Idempotent-ish for test isolation purposes only insofar as it is meant
@@ -83,10 +83,27 @@ def seed_fake(store: Store, sink: FakeSink) -> None:
     creates both from scratch).
     """
     # --- Libraries -----------------------------------------------------
-    bedtime = store.libraries.create("Bedtime", mode=LibraryMode.SINGLE)
-    car_trips = store.libraries.create("Car Trips", mode=LibraryMode.ALBUM)
+    # A library is exactly one folder. `media_root` is optional here only
+    # so the older call shape (`seed_fake(store, sink)`) still works for
+    # tests that never look at a folder; when it is given, every seeded
+    # library gets a real directory under it -- which is what the folder
+    # picker and the library page's scan-on-open both expect.
+    def _folder(name: str) -> str | None:
+        if media_root is None:
+            return None
+        path = Path(media_root) / name
+        path.mkdir(parents=True, exist_ok=True)
+        return str(path)
+
+    bedtime = store.libraries.create(
+        "Bedtime", mode=LibraryMode.SINGLE, folder_path=_folder("Bedtime")
+    )
+    car_trips = store.libraries.create(
+        "Car Trips", mode=LibraryMode.ALBUM, folder_path=_folder("Car Trips")
+    )
     audiobook = store.libraries.create(
-        "Audiobook", mode=LibraryMode.SERIAL, folder_path="/media/audiobook"
+        "Audiobook", mode=LibraryMode.SERIAL,
+        folder_path=_folder("Audiobook") or "/media/audiobook",
     )
 
     bedtime_items = [

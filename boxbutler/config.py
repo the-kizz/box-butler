@@ -83,7 +83,13 @@ logger = logging.getLogger(__name__)
 class Settings:
     data_dir: Path = field(default_factory=lambda: Path("/data"))
     cache_dir: Path = field(default_factory=lambda: Path("/cache"))
-    media_root: Path | None = field(default_factory=lambda: Path("/media"))
+    # Required, not optional, and never guessed at (see
+    # `boxbutler.sources.library_folder.require_media_root`, which
+    # `build()` calls before anything else): a library *is* a folder
+    # under this root, so a missing mount is a configuration failure that
+    # names itself at startup — never a fallback into `data_dir`, which
+    # is the volume the operator backs up.
+    media_root: Path = field(default_factory=lambda: Path("/media"))
     timezone: str = field(default_factory=default_timezone_name)
     schedule: str = "15:00"
     # spec §3.4 revised 5340 (89 min; a minute of insurance against

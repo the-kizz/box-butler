@@ -1,0 +1,53 @@
+{# Folder picker — browses and creates, confined to the media root.
+
+   Plex only browses, which is right for a cataloguer that never writes to
+   your libraries. Box Butler downloads into the library folder, which puts
+   it in Sonarr's camp — so this offers to create the folder too, and a new
+   operator never has to ssh in and `mkdir`.
+
+   Every link here is a *relative* path; `resolve_within` on the server is
+   what makes "confined to the media root" true, not this markup. There is
+   deliberately no way to type a path and no link above the root. #}
+<div class="folder-picker" id="folder-picker">
+  <p class="folder-picker-root">
+    Inside <code>{{ media_root }}</code>{% if current %}/<code>{{ current }}</code>{% endif %}
+  </p>
+
+  <ul class="folder-picker-list">
+    {% if not at_root %}
+    <li>
+      <button type="button" class="btn btn-secondary folder-up"
+              hx-get="/libraries/folders?path={{ parent | urlencode }}"
+              hx-target="#folder-picker" hx-swap="outerHTML">
+        Up one level
+      </button>
+    </li>
+    {% endif %}
+    {% for name, rel in folders %}
+    <li class="folder-picker-entry">
+      <label class="toggle-label">
+        <input type="radio" name="folder_path" value="{{ rel }}">
+        {{ name }}
+      </label>
+      <button type="button" class="btn btn-secondary folder-open"
+              hx-get="/libraries/folders?path={{ rel | urlencode }}"
+              hx-target="#folder-picker" hx-swap="outerHTML"
+              aria-label="Open {{ name }}">
+        Open
+      </button>
+    </li>
+    {% endfor %}
+    {% if not folders and at_root %}
+    <li class="empty-state">No folders here yet.</li>
+    {% endif %}
+  </ul>
+
+  {% if suggested and not suggested_exists %}
+  <p class="folder-picker-create">
+    <label class="toggle-label">
+      <input type="radio" name="folder_path" value="{{ (current ~ '/' ~ suggested) if current else suggested }}" checked>
+      Create <code>{{ suggested }}</code> here
+    </label>
+  </p>
+  {% endif %}
+</div>

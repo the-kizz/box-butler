@@ -24,6 +24,10 @@ def _set_env(monkeypatch, tmp_path, **extra):
         monkeypatch.setenv(k, v)
     monkeypatch.setenv("BOXBUTLER_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setenv("BOXBUTLER_CACHE_DIR", str(tmp_path / "cache"))
+    # `/media` is a required mount now -- a library is a folder under it,
+    # so `build()` refuses to start without one.
+    (tmp_path / "media").mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("BOXBUTLER_MEDIA_ROOT", str(tmp_path / "media"))
     monkeypatch.setenv("BOXBUTLER_SINK_KIND", "fake")
     monkeypatch.delenv("BOXBUTLER_CONFIG", raising=False)
 

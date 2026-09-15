@@ -38,7 +38,19 @@ services:
     volumes:
       - ./data:/data                 # SQLite store + snapshots
       - ./cache:/cache               # fetched/rendered audio - large, safe to exclude from backups
-      - /path/to/media:/media:ro     # optional: folder-backed libraries, read-only, never written
+      # REQUIRED, and read-write. A library is exactly one folder under
+      # this mount, and adding a source (a video, a feed, an upload)
+      # downloads the audio into that folder — so Box Butler refuses to
+      # start without it, and it can no longer be mounted `:ro`.
+      #
+      # Box Butler only ever *creates* files here. It never modifies,
+      # renames, moves or deletes a file it did not create; a name
+      # collision picks a different name rather than overwriting; and
+      # deleting an item deletes the file only if you explicitly tick the
+      # box. /media is deliberately NOT chowned on startup (see
+      # docker-entrypoint.sh) — it is your media, not the app's — so set
+      # PUID/PGID below to a uid that can already write to it.
+      - /path/to/media:/media        # required: your audio library, read-write
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8410/healthz')"]
       interval: 30s

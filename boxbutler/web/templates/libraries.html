@@ -36,8 +36,19 @@
       <option value="serial">Serial — plays through in order, remembers its place</option>
     </select>
 
-    <label for="new-lib-folder">Folder path (optional — makes this a folder library)</label>
-    <input id="new-lib-folder" name="folder_path" type="text" placeholder="/media/example">
+    {# A library *is* a folder, so this is not optional any more — it is
+       just pre-answered. Leaving the picker alone creates a folder named
+       after the library under the media root; there is no free-text path
+       field, because there is nowhere outside the media root a library
+       may live. #}
+    <fieldset class="new-lib-folder">
+      <legend>Folder</legend>
+      <p class="field-hint">Everything in this library lives in one folder, and anything
+        you add — a link, a feed, an upload — is downloaded into it.</p>
+      <div hx-get="/libraries/folders" hx-trigger="load" hx-swap="outerHTML">
+        <p class="muted">Loading folders…</p>
+      </div>
+    </fieldset>
 
     <button type="submit" class="btn btn-primary">Create library</button>
   </form>

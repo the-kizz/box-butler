@@ -4,13 +4,22 @@ spec §3.6).
 The cache lives at `/cache` (a separate bind mount from `/data`, see
 `compose/box-butler.yml`), deliberately outside the operator's app-data
 backup scope so multi-hour audio stays out of it. Growth is unbounded by
-design — every fetched source and
-every rendered rendition lives there until this module says otherwise —
+design — every rendered rendition, and any source that had to be
+re-fetched because its library-folder copy went missing, lives there until
+this module says otherwise —
 so eviction has to be explicit, and it has to be careful: this is the
 first module in the project whose whole job is to delete things that are
 still, in general, useful.
 
 ## What must never be evicted
+
+- **Anything outside `/cache`.** Since "a library is a folder", a
+  source's audio lives in the library folder, and `_fetch` records a
+  `source_file` row pointing there. Those rows are *not* eviction
+  candidates: a library folder holds the operator's own media, is not
+  derived from anything, and no cache budget may ever shrink it. The
+  cache holds renditions (and re-fetched sources) only. `_inside` below
+  is the guard; `plan_eviction` also never looks anywhere else.
 
 - **A source or rendition inside the prefetch window**, for *any*
   assignment — evicting one would defeat the entire buffer Task 24's
@@ -142,6 +151,26 @@ def _cache_files(cache_dir: Path) -> list[Path]:
     return [p for p in cache_dir.iterdir() if p.is_file()]
 
 
+def _inside(path: Path, cache_dir: Path) -> bool:
+    """Whether `path` really is in the cache directory.
+
+    Eviction deletes things, and since "a library is a folder" the
+    orchestrator records `source_file` rows pointing at files in library
+    folders too — the operator's own audio, which is not derived, not
+    disposable, and must survive any cache budget whatsoever. The cache
+    is the *only* place this module may delete from, so that is asserted
+    here rather than inferred from the fact that `_cache_files` happens
+    to iterate one directory. See
+    `test_retention_never_touches_a_library_folder`.
+    """
+    try:
+        resolved_cache = cache_dir.resolve()
+        resolved = path.resolve()
+    except OSError:
+        return False
+    return resolved.parent == resolved_cache
+
+
 def cache_usage_bytes(cache_dir: Path) -> int:
     """Total bytes currently in the cache directory. Used to detect a
     budget that eviction could not reach because protected content alone
@@ -239,6 +268,17 @@ def evict(
     renditions_by_path = {Path(r.cache_path): r for r in store.renditions.list()}
     sources_by_path = {Path(sf.cache_path): sf for sf in store.sources.list()}
     for e in plan:
+        if not _inside(e.path, cache_dir):
+            # This is the one loop in the codebase that unlinks files, and
+            # a library folder is the one place it must never reach. Today
+            # `plan_eviction` only ever lists `cache_dir`, so this looks
+            # redundant -- but the obvious future edit ('evict what the
+            # database says exists, not only what is in the directory')
+            # would put library-folder paths straight into the plan, since
+            # `_fetch` records a `source_file` row for every item.
+            # Verified: with that edit applied and this check removed, the
+            # operator's own files are deleted.
+            continue
         r = renditions_by_path.get(e.path)
         if r is not None:
             store.renditions.delete(r.id)

@@ -3,6 +3,50 @@
 All notable changes to Box Butler are documented in this file. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed
+
+- **A library is exactly one folder.** The split between "folder-backed" and "link-backed"
+  libraries is gone. Every library is one directory under the media root, and a source — a video, a
+  playlist, a podcast feed, an upload — is simply *how media arrives in it*: adding one downloads
+  the audio into that folder, after which it is an ordinary file, indistinguishable from one you
+  copied in by hand. This is the model Plex and the \*arr stack use.
+- **`/media` is now read-write, and required.** The old "nothing in the image may ever write to
+  `/media`" property was correct while the app only read. It is replaced, not weakened, by a
+  narrower one: the app only ever *creates* files in a library folder, never modifies, renames,
+  moves, truncates or deletes one it did not create, resolves a name collision by choosing a
+  different name rather than overwriting, and deletes a file only on an explicit, confirmed choice
+  in the UI. `tests/test_media_is_append_only.py` fills a library folder with files the app did not
+  create, runs every operation that touches a library, and asserts each one is byte-identical
+  afterwards.
+- **Startup fails if `/media` is missing or unwritable**, naming the mount. There is deliberately no
+  fallback into `/data` — that is the volume you back up, and libraries hold hours of audio. Plex,
+  Sonarr, Immich and Paperless all refuse the same way.
+- **`/media` is still never chowned.** `/data` and `/cache` are the app's own volumes; `/media` is
+  your media library, likely shared with other apps and plausibly terabytes. Set `PUID`/`PGID` to a
+  uid that can already write to it.
+- **The cache holds renditions only** — the trimmed, verified audio uploaded to a tonie. Retention
+  and eviction can never reach into a library folder, whatever the cache budget.
+- **Setup wizard step 2 is no longer mandatory**: watch a folder / paste a link / skip, with skip
+  the default when a library already exists. It previously demanded both a library name and a link
+  while its own help text promised a folder option "later".
+
+### Added
+
+- **A folder picker** confined to the media root — it lists subfolders and offers to create one
+  named after the library. It cannot navigate above the root: no `..`, no absolute path, no symlink
+  escape.
+- **Opening a library page scans its folder first**, so a file copied in by hand is simply listed.
+  Deliberately *not* a filesystem watcher: inotify does not fire on NFS or SMB, so a watcher would
+  be the feature most likely to look like it works while silently doing nothing.
+
+### Migration
+
+- A library with no folder is given one derived from its name under the media root, and the folder
+  is created, at startup. **No audio is moved**: anything already fetched into `/cache` stays there
+  and ages out by ordinary eviction. A migration that relocates audio can lose it.
+
 ## [0.1.2] — 2026-09-15
 
 ### Changed

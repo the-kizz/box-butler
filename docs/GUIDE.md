@@ -13,9 +13,13 @@ plays**. Nothing touches a tonie until you run, and a dry run shows you the plan
 The common case: a shelf of bedtime stories, one a night, in order, without anyone opening the app.
 
 1. **Libraries → New library**, call it `Bedtime`, mode `single`.
-2. Add the audio. For files you already own, put them in a folder under your `/media` mount — each
-   immediate subfolder becomes a library automatically. Otherwise paste a podcast feed or a playlist
-   URL, or upload files directly.
+2. Add the audio. **A library is exactly one folder** under your `/media` mount — each immediate
+   subfolder becomes a library automatically, and files you copy in by hand are listed the next time
+   you open the library page (no Scan click needed; there is a Scan button too). Paste a podcast
+   feed, a playlist URL or a video link and the audio is *downloaded into that same folder*, so
+   everything in a library is just a file you can see, move and back up yourself. Box Butler only
+   ever creates files there — it never touches one it did not create, and removing an item deletes
+   the file only if you explicitly ask it to.
 3. **Dashboard → the tonie's card → Assign a library →** `Bedtime`.
 4. Leave *What this tonie plays* on **Rotate through the library**.
 5. **Dry run** to see what it would load, then **Apply** — or turn on the schedule and let 15:00 do it.
@@ -73,9 +77,10 @@ episodes stays usable.
 A Creative-Tonie holds a fixed amount of audio (the cloud's limit is 5400 seconds; the default cap is
 5395). Anything longer is trimmed to the **first** 89 minutes for the tonie.
 
-**Your files are never modified** — the trim happens on a copy in the cache, and folder libraries are
-mounted read-only. But a two-and-a-half hour story becomes its first 89 minutes on the tonie, and the
-ending is not on there.
+**Your files are never modified** — the trim happens on a copy in the cache. Box Butler writes to
+your library folders, but only ever to *create* a new file: it never modifies, renames, moves or
+deletes one it did not create. But a two-and-a-half hour story becomes its first 89 minutes on the
+tonie, and the ending is not on there.
 
 Library rows say so before you ever run, so it is never a surprise:
 

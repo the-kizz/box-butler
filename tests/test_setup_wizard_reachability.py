@@ -26,6 +26,14 @@ from fastapi.testclient import TestClient
 from boxbutler.config import load_settings
 from boxbutler.main import build, create_web_app
 
+
+def _media_root(tmp_path):
+    """`/media` is required now (a library *is* a folder), so a built
+    process needs a real one -- exactly as a real install does."""
+    root = tmp_path / "media"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
 BASE_ENV = {
     "BOXBUTLER_SINK_USER": "u",
     "BOXBUTLER_SINK_PASSWORD": "p",
@@ -42,6 +50,9 @@ def _build(tmp_path, **extra_env):
             **extra_env,
             "BOXBUTLER_DATA_DIR": str(tmp_path / "data"),
             "BOXBUTLER_CACHE_DIR": str(tmp_path / "cache"),
+            # `/media` is a required mount now -- a library is a folder
+            # under it, so `build()` refuses to start without one.
+            "BOXBUTLER_MEDIA_ROOT": str(_media_root(tmp_path)),
         },
     )
     return build(settings)
