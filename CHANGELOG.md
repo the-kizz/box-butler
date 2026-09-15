@@ -5,6 +5,8 @@ All notable changes to Box Butler are documented in this file. Format loosely fo
 
 ## [Unreleased]
 
+## [0.1.3] — 2026-09-15
+
 ### Changed
 
 - **A library is exactly one folder.** The split between "folder-backed" and "link-backed"
@@ -40,6 +42,15 @@ All notable changes to Box Butler are documented in this file. Format loosely fo
 - **Opening a library page scans its folder first**, so a file copied in by hand is simply listed.
   Deliberately *not* a filesystem watcher: inotify does not fire on NFS or SMB, so a watcher would
   be the feature most likely to look like it works while silently doing nothing.
+
+### Fixed
+
+- **The setup wizard's folder picker never appeared.** Two independent causes, either one
+  sufficient: its `hx-get` pointed at a route the setup gate redirects and `require_login` refuses,
+  and `setup.html` is standalone so the page had no htmx on it at all. Both silent — an htmx
+  element that never loads looks exactly like one that was never there. The wizard now loads htmx
+  and serves the picker from `/setup/folders`, which stops answering the moment an admin account
+  exists.
 
 ### Migration
 
