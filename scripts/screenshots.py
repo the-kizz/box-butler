@@ -56,6 +56,18 @@ SCREENS = [
 
 COLOR_SCHEMES = ["light", "dark"]
 
+# The flow shots: the three screens where a library gets made and filled.
+# They are captured separately from SCREENS because two of them need an
+# app that has *not* been set up yet (the wizard redirects to / once an
+# admin account exists), and because each one is a fragment of a page
+# rather than a whole viewport -- a full-page shot of the library screen
+# tells you nothing about the "add media" form at the bottom of it.
+FLOW_SHOTS = [
+    ("setup-library-folder.png", "wizard step 2: the library folder picker"),
+    ("create-library.png", "Libraries: the New library form with its folder picker"),
+    ("add-media.png", "a library's folder line and the Add to this library form"),
+]
+
 
 def _free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -77,6 +89,117 @@ def _wait_until_up(port: int, timeout_s: float = 15.0) -> None:
         except (urllib.error.URLError, ConnectionError, OSError):
             time.sleep(0.1)
     raise RuntimeError(f"dev app never came up on port {port}")
+
+
+def _serve(app, port: int):
+    """Run `app` on `port` in a daemon thread. Returns (server, thread) so
+    the caller can shut it down."""
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    _wait_until_up(port)
+    return server, thread
+
+
+def _capture_flow(playwright) -> None:
+    """The three flow shots.
+
+    Builds its own throwaway app for the wizard, because `/setup` is only
+    reachable while no admin account exists -- the dev app already has
+    one. Both apps are in-process, on localhost, against a `FakeSink`;
+    neither can reach a real tonie or a real media directory.
+    """
+    import tempfile
+
+    from boxbutler.sinks.fake import FakeSink
+    from boxbutler.store.db import Store
+    from boxbutler.web import dev as dev_module
+    from boxbutler.web.app import create_app
+    from boxbutler.web.fake_data import FakeRunner
+    from boxbutler.web.settings import WebSettings
+
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    # --- the wizard, on an app with no admin account yet ---------------
+    tmp = Path(tempfile.mkdtemp(prefix="bb-"))
+    media_root = tmp / "media"
+    # Folders a real operator would already have. The picker browsing an
+    # empty directory would show the feature doing nothing.
+    for name in ("Audiobook", "Car Trips", "Songs"):
+        (media_root / name).mkdir(parents=True, exist_ok=True)
+    store = Store.open(tmp / "wizard.sqlite")
+    sink = FakeSink()
+    sink.add_target("fake-amber-07", "Amber Tonie", [])
+    # No bootstrap admin: `ensure_admin` would write one and the setup
+    # gate would then send /setup straight to /, which is exactly what a
+    # real first start does *not* do.
+    settings = WebSettings(secret_key="dev", admin_user="", admin_password="", data_dir=tmp)
+    wizard_app = create_app(
+        store, sink, settings, FakeRunner(store, sink), media_root=media_root
+    )
+    port = _free_port()
+    server, thread = _serve(wizard_app, port)
+    browser = playwright.chromium.launch()
+    try:
+        page = browser.new_context(viewport=DESKTOP_VIEWPORT).new_page()
+        page.emulate_media(color_scheme="light")
+        page.goto(f"http://127.0.0.1:{port}/setup")
+        page.wait_for_load_state("networkidle")
+        # Step 1 asks for the tonie account; the FakeSink accepts any
+        # credentials, so this is a click-through to reach step 2.
+        page.fill("input[name=tonie_username]", "you@example.com")
+        page.fill("input[name=tonie_password]", "not-a-real-password")
+        page.click("button.setup-next")
+        page.wait_for_load_state("networkidle")
+        page.locator(".setup-wrap").screenshot(path=str(OUT_DIR / "setup-library-folder.png"))
+        print(f"wrote {OUT_DIR / 'setup-library-folder.png'}")
+    finally:
+        browser.close()
+        server.should_exit = True
+        thread.join(timeout=10)
+
+    # --- the two library screens, on the seeded dev app ----------------
+    dev_store = dev_module._store  # noqa: SLF001 -- dev-only introspection
+    dev_settings = dev_module._settings  # noqa: SLF001
+    library_id = dev_store.libraries.list()[0].id
+    port = _free_port()
+    server, thread = _serve(dev_module.app, port)
+    base_url = f"http://127.0.0.1:{port}"
+    browser = playwright.chromium.launch()
+    try:
+        page = browser.new_context(viewport=DESKTOP_VIEWPORT).new_page()
+        page.emulate_media(color_scheme="light")
+        page.goto(f"{base_url}/login")
+        page.fill("#username", dev_settings.admin_user)
+        page.fill("#password", dev_settings.admin_password)
+        page.click("button.login-submit")
+        page.wait_for_load_state("networkidle")
+
+        page.goto(f"{base_url}/libraries")
+        page.wait_for_load_state("networkidle")
+        page.locator(".create-library").screenshot(path=str(OUT_DIR / "create-library.png"))
+        print(f"wrote {OUT_DIR / 'create-library.png'}")
+
+        page.goto(f"{base_url}/libraries/{library_id}")
+        page.wait_for_load_state("networkidle")
+        # The folder line and the add form together: "here is the folder,
+        # and here is how things get into it" is one idea, not two.
+        top = page.locator(".scan-form").bounding_box()
+        bottom = page.locator(".add-item").bounding_box()
+        page.screenshot(
+            path=str(OUT_DIR / "add-media.png"),
+            clip={
+                "x": top["x"] - 8,
+                "y": top["y"] - 8,
+                "width": max(top["width"], bottom["width"]) + 16,
+                "height": (bottom["y"] + bottom["height"]) - top["y"] + 16,
+            },
+        )
+        print(f"wrote {OUT_DIR / 'add-media.png'}")
+    finally:
+        browser.close()
+        server.should_exit = True
+        thread.join(timeout=10)
 
 
 def main() -> int:
@@ -144,6 +267,7 @@ def main() -> int:
                 context.close()
             finally:
                 browser.close()
+            _capture_flow(p)
     finally:
         server.should_exit = True
         thread.join(timeout=10)

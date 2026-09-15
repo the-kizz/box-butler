@@ -17,7 +17,7 @@
     {% if not at_root %}
     <li>
       <button type="button" class="btn btn-secondary folder-up"
-              hx-get="/libraries/folders?path={{ parent | urlencode }}"
+              hx-get="{{ browse_url }}?path={{ parent | urlencode }}"
               hx-target="#folder-picker" hx-swap="outerHTML">
         Up one level
       </button>
@@ -30,7 +30,7 @@
         {{ name }}
       </label>
       <button type="button" class="btn btn-secondary folder-open"
-              hx-get="/libraries/folders?path={{ rel | urlencode }}"
+              hx-get="{{ browse_url }}?path={{ rel | urlencode }}"
               hx-target="#folder-picker" hx-swap="outerHTML"
               aria-label="Open {{ name }}">
         Open

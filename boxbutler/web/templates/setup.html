@@ -5,6 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ APP_NAME }} — Setup</title>
   <link rel="stylesheet" href="/static/app.css">
+  {# The wizard is a standalone page -- it does not extend base.html -- so
+     it has to bring htmx itself. Without this the folder picker's
+     hx-get never fires and step 2 renders with no way to choose a
+     folder, silently: an htmx element that never loads looks exactly
+     like an element that was never there. #}
+  <script src="/static/vendor/htmx.min.js" defer></script>
 </head>
 {% from "partials/_icons.html" import icon %}
 <body class="setup-body">
@@ -97,7 +103,7 @@
         <legend>Folder</legend>
         <span class="field-hint">Leave this alone to create a folder named after the library.
           Anything you add to it — a link, a feed, an upload — is downloaded into this folder.</span>
-        <div hx-get="/libraries/folders" hx-trigger="load" hx-swap="outerHTML">
+        <div hx-get="/setup/folders?name={{ library_name | urlencode }}" hx-trigger="load" hx-swap="outerHTML">
           <input type="hidden" name="folder_path" value="{{ folder_path }}">
         </div>
       </fieldset>

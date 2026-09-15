@@ -51,7 +51,8 @@ audiobook over two weeks, and one favourite that never changes.
 
 ## Features
 
-- **Six ways in** — YouTube video or playlist, podcast RSS, upload, a watched folder, direct URL.
+- **A library is a folder** — copy files in yourself, or paste a YouTube video, playlist, podcast
+  feed or direct audio URL and it's downloaded into that same folder.
 - **Shuffle or ordered**, **duplicate avoidance** across tonies, and a repeat cooldown.
 - **Prefetch**, so a broken extractor doesn't cost you the night it breaks.
 - **Web UI, CLI and Prometheus metrics** — dry-run is the default everywhere; writing needs `--apply`.
@@ -65,7 +66,7 @@ audiobook over two weeks, and one favourite that never changes.
 ```yaml
 services:
   box-butler:
-    image: ghcr.io/the-kizz/box-butler:0.1.2
+    image: ghcr.io/the-kizz/box-butler:0.1.3
     container_name: box-butler
     restart: unless-stopped
     ports:
@@ -100,7 +101,7 @@ docker run -d --name box-butler -p 8410:8410 \
   -e BOXBUTLER_SINK_USER=you@example.com \
   -e BOXBUTLER_SINK_PASSWORD=your-tonies-password \
   -v "$PWD/data:/data" -v "$PWD/cache:/cache" -v "$PWD/media:/media" \
-  ghcr.io/the-kizz/box-butler:0.1.2
+  ghcr.io/the-kizz/box-butler:0.1.3
 ```
 
 ### About `/media`
@@ -126,9 +127,33 @@ Box Butler refuses to start if `/media` is missing or unwritable, naming the mou
 deliberately no fallback into `/data`: that is the volume you back up, and libraries hold hours of
 audio.
 
-Then open `http://localhost:8410`, finish the three-step wizard, add a library and assign it to a
-tonie. Nothing touches a tonie until you ask: `boxbutler run` prints the plan and exits,
-`boxbutler run --apply` is the one that acts.
+### Getting audio into a library
+
+Open `http://localhost:8410` and the three-step wizard picks the folder for you — browse what's
+already under `/media`, or let it create one named after the library. Every step can be skipped if
+you already have what it makes.
+
+<img width="480" alt="Setup step 2: choosing a library folder from the folders under the media mount, or creating one" src="docs/screenshots/setup-library-folder.png">
+
+Afterwards, **Libraries → New library** does the same thing:
+
+<img width="560" alt="The New library form: name, mode, and a folder picker listing the folders under the media mount" src="docs/screenshots/create-library.png">
+
+Then fill it, either way round:
+
+- **Copy files in yourself** — `cp`, `rsync`, Samba, your \*arr stack, anything. Opening the library
+  page scans its folder first, so what you copied in is already listed; there's a **Scan folder**
+  button for a deliberate re-check. (Scan-on-open rather than a filesystem watcher, deliberately:
+  inotify doesn't work on NFS or SMB, so a watcher would look like it worked and quietly do nothing
+  on a network share.)
+- **Paste a link or upload** — a YouTube video or playlist, a podcast feed, a direct audio URL. The
+  audio is **downloaded into that same folder**, after which it's an ordinary file you can see, move
+  and back up yourself.
+
+<img width="560" alt="A library's folder path with a Scan folder button, above the Add a source form for a link or an upload" src="docs/screenshots/add-media.png">
+
+Assign the library to a tonie and you're done. Nothing touches a tonie until you ask:
+`boxbutler run` prints the plan and exits, `boxbutler run --apply` is the one that acts.
 
 ## Configuration
 

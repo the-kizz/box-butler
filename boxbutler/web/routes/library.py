@@ -166,16 +166,18 @@ def _redirect_to_index(announce: str) -> RedirectResponse:
     return RedirectResponse(url=f"/libraries?announce={quote(announce)}", status_code=303)
 
 
-@router.get("/libraries/folders")
-def browse_folders(
-    request: Request,
-    path: str = "",
-    name: str = "",
-    user: str = Depends(require_login),
-):
-    """The folder picker: the subfolders of `path` inside the media root,
-    plus the folder a library called `name` would get if it doesn't exist
-    yet.
+def render_folder_picker(
+    request: Request, path: str, name: str, *, browse_url: str = "/libraries/folders"
+) -> Response:
+    """The folder picker partial for `path`, or the refusal that replaces
+    it.
+
+    Shared with the setup wizard, which needs the identical picker before
+    an admin account exists and therefore cannot reach `/libraries/*` at
+    all — the setup gate redirects it and `require_login` would refuse it
+    (`boxbutler/web/routes/setup.py::setup_folders`). Both callers get
+    their confinement from `resolve_within` in here, so there is no second
+    implementation to keep in step.
 
     Confined to the media root by `resolve_within`, which is what stops
     `..`, an absolute path and a symlink pointing elsewhere alike (see
@@ -210,8 +212,22 @@ def browse_folders(
             "folders": [(p.name, str(p.relative_to(root))) for p in folders],
             "suggested": suggested,
             "suggested_exists": bool(suggested) and (root / (f"{rel}/{suggested}" if rel else suggested)).is_dir(),
+            # The wizard's picker has to post back to /setup, not to the
+            # library routes it cannot reach yet.
+            "browse_url": browse_url,
         },
     )
+
+
+@router.get("/libraries/folders")
+def browse_folders(
+    request: Request,
+    path: str = "",
+    name: str = "",
+    user: str = Depends(require_login),
+):
+    """The folder picker for a logged-in operator on the library screens."""
+    return render_folder_picker(request, path, name)
 
 
 @router.get("/libraries/{library_id}")

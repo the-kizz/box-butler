@@ -65,6 +65,8 @@ def _build(tmp_path, monkeypatch, **extra_env):
     replaced so no credential, socket or cloud account is involved."""
     import boxbutler.main as main_mod
 
+    media_root = tmp_path / "media"
+    media_root.mkdir(exist_ok=True)
     sink = CloudNamedFakeSink()
     sink.add_target(TARGET_ID, "Green Tonie", [LiveChapter("old1", "Last Night", 5340.0, False)])
     monkeypatch.setattr(
@@ -77,6 +79,7 @@ def _build(tmp_path, monkeypatch, **extra_env):
             **extra_env,
             "BOXBUTLER_DATA_DIR": str(tmp_path / "data"),
             "BOXBUTLER_CACHE_DIR": str(tmp_path / "cache"),
+            "BOXBUTLER_MEDIA_ROOT": str(media_root),
         },
     )
     deps = main_mod.build(settings)

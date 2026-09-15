@@ -86,6 +86,34 @@ def _render(request: Request, step: int, **ctx):
     return templates.TemplateResponse(request, "setup.html", context)
 
 
+@router.get("/setup/folders")
+def setup_folders(request: Request, path: str = "", name: str = ""):
+    """The folder picker, for the wizard only.
+
+    Step 2 loads the picker over htmx, and during setup there is no admin
+    account and no session — so `/libraries/folders` is doubly out of
+    reach: the setup gate in `web/app.py` redirects every non-`/setup`
+    path, and `require_login` would refuse it anyway. The picker silently
+    never appeared, which is exactly the step an operator got stuck on.
+
+    This is the same partial from the same builder (no second
+    implementation, so confinement to the media root cannot drift between
+    them). It is open without a login for precisely as long as the wizard
+    itself is: once an admin account exists it stops answering, so a
+    configured install never exposes an unauthenticated route that lists
+    directory names.
+    """
+    store: Store = request.app.state.store
+    if _configured(store):
+        return RedirectResponse(url="/", status_code=303)
+    # Imported here rather than at module scope: routes/library.py imports
+    # nothing from this module, and keeping it that way means the wizard
+    # depends on the library screens and never the reverse.
+    from .library import render_folder_picker
+
+    return render_folder_picker(request, path, name, browse_url="/setup/folders")
+
+
 @router.get("/setup")
 def setup_start(request: Request):
     store: Store = request.app.state.store

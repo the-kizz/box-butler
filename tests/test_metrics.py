@@ -343,6 +343,8 @@ def test_metrics_endpoint_is_public_for_the_scraper(tmp_path):
     from boxbutler.config import load_settings
     from boxbutler.main import build, create_web_app
 
+    media_root = tmp_path / "media"
+    media_root.mkdir()
     env = {
         "BOXBUTLER_SINK_USER": "u",
         "BOXBUTLER_SINK_PASSWORD": "p",
@@ -352,6 +354,7 @@ def test_metrics_endpoint_is_public_for_the_scraper(tmp_path):
         "BOXBUTLER_SINK_KIND": "fake",
         "BOXBUTLER_DATA_DIR": str(tmp_path),
         "BOXBUTLER_CACHE_DIR": str(tmp_path / "cache"),
+        "BOXBUTLER_MEDIA_ROOT": str(media_root),
     }
     c = TestClient(create_web_app(build(load_settings(None, env))))
     r = c.get("/metrics")
@@ -370,6 +373,9 @@ def test_building_two_apps_in_one_process_does_not_double_register(tmp_path):
     from boxbutler.config import load_settings
     from boxbutler.main import build, create_web_app
 
+    media_root = tmp_path / "media"
+    media_root.mkdir()
+
     def make_client(sub):
         env = {
             "BOXBUTLER_SINK_USER": "u",
@@ -380,6 +386,7 @@ def test_building_two_apps_in_one_process_does_not_double_register(tmp_path):
             "BOXBUTLER_SINK_KIND": "fake",
             "BOXBUTLER_DATA_DIR": str(tmp_path / sub),
             "BOXBUTLER_CACHE_DIR": str(tmp_path / sub / "cache"),
+            "BOXBUTLER_MEDIA_ROOT": str(media_root),
         }
         return TestClient(create_web_app(build(load_settings(None, env))))
 

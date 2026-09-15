@@ -20,6 +20,8 @@ The common case: a shelf of bedtime stories, one a night, in order, without anyo
    everything in a library is just a file you can see, move and back up yourself. Box Butler only
    ever creates files there — it never touches one it did not create, and removing an item deletes
    the file only if you explicitly ask it to.
+
+   <img width="560" alt="A library's folder path with a Scan folder button, above the Add a source form for a link or an upload" src="screenshots/add-media.png">
 3. **Dashboard → the tonie's card → Assign a library →** `Bedtime`.
 4. Leave *What this tonie plays* on **Rotate through the library**.
 5. **Dry run** to see what it would load, then **Apply** — or turn on the schedule and let 15:00 do it.
