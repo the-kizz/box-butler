@@ -21,12 +21,24 @@ from pathlib import Path
 def _dockerfile_stages(text):
     """Split a Dockerfile into (stage_name_or_None, stage_text) tuples in
     order, one per `FROM` line, so tests can pin behaviour to a specific
-    stage instead of the file as a whole."""
+    stage instead of the file as a whole.
+
+    Continuation lines are not instructions. A `RUN` whose shell command
+    spans several lines can contain anything, including Python that starts
+    with the word `from` -- and the build-time JS-runtime guard does
+    exactly that (`from yt_dlp.utils._jsruntime import ...`). Reading that
+    as a stage boundary silently truncates the final stage and makes every
+    "is X in the runtime stage?" assertion answer about the wrong text, so
+    a line is only a FROM when the previous one did not end in a
+    backslash.
+    """
     stages = []
     current_name = None
     current_lines = []
+    continued = False
     for line in text.splitlines(keepends=True):
-        m = re.match(r"\s*FROM\s+\S+(?:\s+AS\s+(\S+))?", line, re.IGNORECASE)
+        m = None if continued else re.match(r"\s*FROM\s+\S+(?:\s+AS\s+(\S+))?", line, re.IGNORECASE)
+        continued = line.rstrip("\n").rstrip().endswith("\\")
         if m:
             if current_lines:
                 stages.append((current_name, "".join(current_lines)))
@@ -39,20 +51,98 @@ def _dockerfile_stages(text):
     return stages
 
 
+def test_stage_splitter_ignores_from_inside_a_continued_run():
+    """The helper every "is X in the runtime stage?" test depends on.
+
+    A multi-line `RUN` can contain any shell or Python, including a line
+    beginning with `from` -- the build-time JS-runtime guard imports
+    `from yt_dlp.utils._jsruntime import ...`. Treating that as a stage
+    boundary truncates the final stage, and the tests above then answer
+    about a fragment instead of the runtime stage: they go red for a
+    reason that has nothing to do with what they are checking, which is
+    exactly how this was found.
+    """
+    sample = (
+        "FROM base AS one\n"
+        "RUN python -c \"\\\n"
+        "from x import y; \\\n"
+        "print(y)\"\n"
+        "FROM base2\n"
+        "COPY --from=one /a /b\n"
+    )
+    stages = _dockerfile_stages(sample)
+    assert [name for name, _ in stages] == ["one", None], (
+        "a `from` inside a continued RUN was read as a stage boundary"
+    )
+    assert "COPY --from=one /a /b" in stages[-1][1]
+
+
+def _node_major_in_dockerfile(text):
+    """The Node major version the image will actually ship, read from the
+    stage the runtime copies its binary from."""
+    m = re.search(r"^FROM\s+node:(\d+)[\w.-]*\s+AS\s+node\s*$", text, re.IGNORECASE | re.M)
+    return int(m.group(1)) if m else None
+
+
 def test_dockerfile_pins_base_and_installs_ffmpeg_node():
     d = Path("Dockerfile").read_text()
-    assert d.startswith("FROM python:3.12-slim") and "ffmpeg" in d and "nodejs" in d and "HEALTHCHECK" in d and "/healthz" in d
+    assert "FROM python:3.12-slim" in d and "ffmpeg" in d and "HEALTHCHECK" in d and "/healthz" in d
+    assert _node_major_in_dockerfile(d) is not None, "no pinned node stage"
     assert "tailwindcss" in d  # CSS built at image-build time (§5)
 
 
-def test_nodejs_is_installed_in_the_final_runtime_stage():
-    """nodejs is load-bearing at runtime, not a build-time nicety: yt-dlp
+def test_the_js_runtime_is_a_version_ytdlp_will_actually_accept():
+    """The test that 0.1.3 needed and did not have.
+
+    The previous version of this asserted the string "nodejs" appeared in
+    the runtime stage. It passed for the whole life of the project while
+    the image shipped Debian bookworm's Node 20 -- which yt-dlp detects,
+    labels `(unsupported)`, and then declines to use, because
+    `NodeJsRuntime.MIN_SUPPORTED_VERSION` is (22, 0, 0). The visible
+    symptom was every YouTube URL failing with "This video is not
+    available": a message that reads like a bad link, not a broken image.
+
+    So this asserts the property that matters rather than the name of the
+    package, and it reads the floor out of the *installed* yt-dlp instead
+    of hard-coding 22 -- if a future yt-dlp raises its minimum, this goes
+    red on the version bump rather than in a user's container.
+    """
+    from yt_dlp.utils._jsruntime import NodeJsRuntime
+
+    required_major = NodeJsRuntime.MIN_SUPPORTED_VERSION[0]
+    shipped_major = _node_major_in_dockerfile(Path("Dockerfile").read_text())
+
+    assert shipped_major is not None, (
+        "no `FROM node:<major>... AS node` stage: the image must pin the JS runtime it ships"
+    )
+    assert shipped_major >= required_major, (
+        f"image ships Node {shipped_major}, but the installed yt-dlp requires "
+        f">= {required_major}; anything older is detected as unsupported and "
+        "every YouTube extraction fails with 'This video is not available'"
+    )
+
+
+def test_the_runtime_stage_does_not_fall_back_to_debians_nodejs_package():
+    """Debian's `nodejs` is the trap this fix removes -- apt would install
+    Node 20 again and nothing else in the suite would notice, because the
+    binary would be present and merely too old."""
+    d = Path("Dockerfile").read_text()
+    apt_lines = [
+        line for line in d.splitlines()
+        if "apt-get install" in line or re.match(r"\s+\S.*\\$", line)
+    ]
+    assert not re.search(r"(^|\s)nodejs(\s|\\|$)", "\n".join(apt_lines)), (
+        "install node from the pinned node stage, not Debian's nodejs package (it is Node 20)"
+    )
+
+
+def test_node_is_present_in_the_final_runtime_stage():
+    """node is load-bearing at runtime, not a build-time nicety: yt-dlp
     needs a JS runtime (--js-runtimes node, yt-dlp-ejs) to extract from
-    YouTube, and without it extraction silently degrades rather than
-    failing loudly. A test that only checks 'nodejs' appears somewhere in
-    the Dockerfile would still pass if nodejs were moved into the `css`
-    build stage alone and dropped from the runtime stage - this test
-    parses the stages and pins it to the *last* one specifically."""
+    YouTube, and without it extraction fails. A test that only checks
+    'node' appears somewhere in the Dockerfile would still pass if it were
+    present in a build stage alone and dropped from the runtime stage -
+    this test parses the stages and pins it to the *last* one."""
     d = Path("Dockerfile").read_text()
     stages = _dockerfile_stages(d)
     assert len(stages) >= 2, "expected at least a css build stage and a runtime stage"
@@ -60,7 +150,9 @@ def test_nodejs_is_installed_in_the_final_runtime_stage():
     assert last_name is None or "css" not in last_name.lower(), (
         "the final Dockerfile stage looks like the css build stage, not the runtime stage"
     )
-    assert "nodejs" in last_stage, "nodejs must be installed in the final (runtime) stage, not only an earlier build stage"
+    assert re.search(r"COPY\s+--from=node\s+\S*bin/node\s+\S*bin/node", last_stage), (
+        "the runtime stage must copy the node binary from the pinned node stage"
+    )
 
 
 def test_dockerfile_pins_tailwind_version_and_discloses_ffmpeg_gpl():
