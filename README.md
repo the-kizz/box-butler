@@ -66,7 +66,7 @@ audiobook over two weeks, and one favourite that never changes.
 ```yaml
 services:
   box-butler:
-    image: ghcr.io/the-kizz/box-butler:0.1.3
+    image: ghcr.io/the-kizz/box-butler:0.1.4
     container_name: box-butler
     restart: unless-stopped
     ports:
@@ -101,7 +101,7 @@ docker run -d --name box-butler -p 8410:8410 \
   -e BOXBUTLER_SINK_USER=you@example.com \
   -e BOXBUTLER_SINK_PASSWORD=your-tonies-password \
   -v "$PWD/data:/data" -v "$PWD/cache:/cache" -v "$PWD/media:/media" \
-  ghcr.io/the-kizz/box-butler:0.1.3
+  ghcr.io/the-kizz/box-butler:0.1.4
 ```
 
 ### About `/media`

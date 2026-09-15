@@ -5,6 +5,27 @@ All notable changes to Box Butler are documented in this file. Format loosely fo
 
 ## [Unreleased]
 
+## [0.1.4] — 2026-09-15
+
+### Fixed
+
+- **YouTube extraction did not work at all in the 0.1.3 image.** It shipped Debian bookworm's
+  `nodejs` package, which is Node 20; yt-dlp's `NodeJsRuntime.MIN_SUPPORTED_VERSION` is `(22, 0, 0)`,
+  so it detected the runtime, marked it `(unsupported)` and declined to use it. Every URL then failed
+  with `This video is not available` — a message that reads like a dead link rather than a broken
+  image. The image now takes Node 22 from the official image (pinned, rather than adding a
+  third-party apt repo: the same reasoning as installing `yt-dlp-ejs` from PyPI instead of fetching a
+  solver from GitHub at runtime).
+- **The test that should have caught it asserted the wrong thing.** It checked that the string
+  `nodejs` appeared in the runtime stage, which a too-old Node satisfies perfectly. It now reads the
+  required floor out of the *installed* yt-dlp, so a future yt-dlp raising its minimum goes red on
+  the version bump rather than in someone's container. The image build additionally asks the
+  installed yt-dlp, in the finished image, whether it will actually accept the bundled runtime — the
+  only check that can see what the image really ended up with — and **fails the build** if not.
+- `_dockerfile_stages`, which every "is X in the runtime stage?" test depends on, treated any line
+  starting with `from` as a stage boundary, including one inside a multi-line `RUN`. It now honours
+  line continuations.
+
 ## [0.1.3] — 2026-09-15
 
 ### Changed
